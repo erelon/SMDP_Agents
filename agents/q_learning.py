@@ -12,8 +12,6 @@ class ContinuousQLearning(Agent):
         self.q_table = {}
         self.policy_changed = False
         self.rho = 0
-        self.q_table_past_a = []
-        self.q_table_past_b = []
 
     def reset(self):
         self.q_table = {}
@@ -41,8 +39,6 @@ class ContinuousQLearning(Agent):
 
     def update_table(self, state, action, reward, time, td_target, td_error, onpolicy):
         self.q_table[state][action] += self.learning_rate * td_error
-        self.q_table_past_a.append(self.q_table["s1"][0])
-        self.q_table_past_b.append(self.q_table["s1"][1])
 
     def learn(self, state, action, reward, next_state, time):
         self.initialize_table(next_state)
