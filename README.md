@@ -102,8 +102,8 @@ last_at = agent.last_policy_changed_at      # episode index (set by the caller)
 | Class | Variant | Paper |
 |---|---|---|
 | `QLearning` | Tabular Q-Learning (discrete time) | Watkins & Dayan, [*Q-Learning*](https://link.springer.com/article/10.1007/BF00992698), Machine Learning 1992 |
-| `ContinuousQLearning` | Q-Learning for SMDPs (continuous / variable time) | Bradtke & Duff, [*Reinforcement Learning Methods for Continuous-Time Markov Decision Problems*](https://proceedings.neurips.cc/paper/1994/hash/b9d3cb7e15e2c35bd5f8e3b1e5a0f6b1-Abstract.html), NeurIPS 1994 |
-| `RLearning` | Average-reward R-Learning (discrete time) | Schwartz, *A Reinforcement Learning Method for Maximizing Undiscounted Rewards*, ICML 1993 |
+| `ContinuousQLearning` | Q-Learning for SMDPs (continuous / variable time) | Bradtke & Duff, [*Reinforcement Learning Methods for Continuous-Time Markov Decision Problems*](https://proceedings.neurips.cc/paper_files/paper/1994/file/07871915a8107172b3b5dc15a6574ad3-Paper.pdf), NeurIPS 1994 |
+| `RLearning` | Average-reward R-Learning (discrete time) | Schwartz, [*A Reinforcement Learning Method for Maximizing Undiscounted Rewards*](https://www.sciencedirect.com/science/chapter/monograph/abs/pii/B9781558603073500459?via%3Dihub), ICML 1993 |
 | `ContinuousRLearning` | R-Learning for SMDPs | Mahadevan, [*Average Reward Reinforcement Learning: Foundations, Algorithms, and Empirical Results*](https://doi.org/10.1007/BF00114727), Machine Learning 1996 |
 | `SMART` | Sample Mean Average Reward Technique | Das et al., [*Solving Semi-Markov Decision Problems Using Average Reward Reinforcement Learning*](https://doi.org/10.1287/mnsc.45.4.560), Management Science 1999 |
 | `RelaxedSMART` | Exponentially-smoothed variant of SMART | Gosavi, [*Reinforcement Learning for Long-Run Average Cost*](https://doi.org/10.1016/S0377-2217(02)00874-3), EJOR 2004 |
