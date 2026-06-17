@@ -8,6 +8,7 @@ from .smart_r import SMART, RelaxedSMART
 from .harmonic_r import Harmonic, WeightedHarmonic
 from .bandits import MAB, ContinuesMAB, UCB, ContinuosUCB
 from .deep_q_wrapper import DeepQWrapper
+from .ppo import PPO, RsmartPPO, SmartPPO, HarmonicPPO, RolloutBuffer
 
 __all__ = [
     'Agent', 'MAX_REWARDS',
@@ -19,4 +20,5 @@ __all__ = [
     'Harmonic', 'WeightedHarmonic',
     'MAB', 'ContinuesMAB', 'UCB', 'ContinuosUCB',
     'DeepQWrapper',
+    'PPO', 'RsmartPPO', 'SmartPPO', 'HarmonicPPO', 'RolloutBuffer',
 ]
