@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "smdp-agents"
+version = "0.1.0"
+description = "Modular average-reward RL agents with first-class SMDP (variable holding-time) support."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "torch",
+]
+
+[tool.setuptools]
+# Flat layout: the importable package lives in ./agents (import as `agents`).
+packages = ["agents"]
