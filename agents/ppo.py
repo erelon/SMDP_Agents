@@ -1,16 +1,26 @@
 """PPO and its average-reward (SMDP) variants — pure torch, agent-only.
 
-The four agents share one PPO core (clipped surrogate + GAE) and differ ONLY in
-how the long-run average reward ``eta`` is estimated, exactly mirroring the
-tabular family (RLearning -> SMART / Harmonic via ``calc_new_rho``):
+One PPO core (clipped surrogate + GAE) plus an average-reward correction whose
+long-run rate ``rho`` is estimated by REUSING the tabular agents' ``calc_new_rho``
+via multiple inheritance — so the rho logic lives in exactly one place and is
+shared by the tabular and deep agents alike:
 
-    PPO          discounted PPO, no average-reward correction (longrun=False)
-    RsmartPPO    eta = EWMA(reward) / EWMA(time)        (Relaxed-SMART / APO)
-    SmartPPO     eta = sum(reward) / sum(time)          (SMART)
-    HarmonicPPO  eta = harmonic mean of reward/time     (Harmonic)
+    PPO          discounted PPO, no correction        (longrun=False)
+    RsmartPPO    (PPO, RelaxedSMART)  rho = EWMA(reward)/EWMA(time)   [APO]
+    SmartPPO     (PPO, SMART)         rho = Σreward/Σtime
+    HarmonicPPO  (PPO, Harmonic)      rho = harmonic mean of reward/time
 
-Defaults match the configuration used for this repo's results. ``time`` is the
-per-step dwell (1.0 for an MDP; pass the macro-step duration for an SMDP).
+Adding a variant is one line — inherit the deep core and a tabular rho agent,
+and pick how the batch feeds the rho updater (``rho_reduce``):
+
+    class WeightedHarmonicPPO(PPO, WeightedHarmonic):
+        longrun = True
+        rho_reduce = "none"          # per-transition (needs each reward's sign)
+
+``rho`` is updated each batch via the inherited ``calc_new_rho``: Rsmart/Smart
+aggregate the batch (mean / sum -> one O(1) call), Harmonic iterates per
+transition. ``time`` is the per-step dwell (1.0 = MDP, macro-step duration =
+SMDP). Defaults match this project's configuration.
 
 You provide the env loop; the agents are env-agnostic (torch + numpy):
 
@@ -26,19 +36,26 @@ You provide the env loop; the agents are env-agnostic (torch + numpy):
             obs = next_obs
         agent.update(buf, agent.value(obs))              # bootstrap from final obs
 """
-import math
-
 import numpy as np
 import torch
 from torch import optim
 
+from .base import Agent
 from .gaussian_mlp import GaussianMLP, gaussian_entropy, gaussian_logp
+from .harmonic_r import Harmonic
+from .smart_r import SMART, RelaxedSMART
 
 
 def _t(x, device):
     if isinstance(x, torch.Tensor):
         return x.to(device=device, dtype=torch.float32)
     return torch.as_tensor(np.asarray(x), dtype=torch.float32, device=device)
+
+
+def _vmean(x, valid):
+    """Mean of x over valid (>0) entries; plain mean if none are valid."""
+    s = valid.sum()
+    return (x * valid).sum() / s if s > 0 else x.mean()
 
 
 class RolloutBuffer:
@@ -55,8 +72,8 @@ class RolloutBuffer:
     def add(self, obs, action, reward, terminated, truncated, value, logp, time=1.0):
         vals = (obs, action, reward, terminated, truncated, value, logp, time)
         for k, v in zip(self._FIELDS, vals):
-            self._d[k].append(torch.as_tensor(np.asarray(v)) if not torch.is_tensor(v)
-                              else v.detach().cpu())
+            self._d[k].append(v.detach().cpu() if torch.is_tensor(v)
+                              else torch.as_tensor(np.asarray(v)))
 
     def stacked(self, device):
         out = {}
@@ -68,17 +85,26 @@ class RolloutBuffer:
         return out
 
 
-class PPO:
-    """Discounted PPO. Base class for the average-reward variants below."""
+class PPO(Agent):
+    """Discounted PPO + the deep-RL machinery. Base for the average-reward
+    variants, which add the ``rho`` correction by also inheriting a tabular
+    rho agent (see module docstring)."""
 
-    longrun = False  # subclasses flip this on to enable the eta correction
+    longrun = False  # variants flip this on to enable the rho correction
 
     def __init__(self, obs_dim, act_dim, hidden=(64, 64), init_log_std=0.0,
-                 learning_rate=3e-4, lr_eta=0.1, rm_vbias_coeff=1.0,
+                 learning_rate=3e-4, rho_lr=0.1, rm_vbias_coeff=1.0,
                  value_loss_coeff=1.0, entropy_loss_coeff=0.01, clip_grad_norm=10.0,
                  discount=None, gae_lambda=0.95, epochs=10, minibatches=20,
                  ratio_clip=0.2, normalize_advantage=False, bootstrap_timelimit=True,
                  batch_T=200, device="cpu", seed=None):
+        # Initialise the inherited (tabular) rho machinery — calc_new_rho, the
+        # per-variant accumulators and self.rho. For plain PPO this just runs
+        # Agent.__init__. action_space is unused by the deep agents (placeholder
+        # satisfies Agent's check); rho_lr maps to the tabular rho_learning_rate.
+        super().__init__(name=type(self).__name__, action_space=[0],
+                         seed=42 if seed is None else seed,
+                         learning_rate=learning_rate, rho_learning_rate=rho_lr)
         if seed is not None:
             torch.manual_seed(seed)
         self.device = device
@@ -95,10 +121,11 @@ class PPO:
         self.normalize_advantage = normalize_advantage
         self.bootstrap_timelimit = bootstrap_timelimit
         self.batch_T = batch_T
-        # Off for plain PPO so the value-bias / eta terms vanish.
-        self.lr_eta = lr_eta if self.longrun else 0.0
+        self.rho_lr = rho_lr
+        self.rho_learning_rate = rho_lr  # used by the inherited calc_new_rho
+        self.rho = 0.0
+        # Off for plain PPO so the value-bias / rho terms vanish.
         self.rm_vbias_coeff = rm_vbias_coeff if self.longrun else 0.0
-        self.eta = 0.0
         self.value_bias = None if self.longrun else 0.0
 
     # --- acting -------------------------------------------------------------
@@ -107,8 +134,7 @@ class PPO:
         """Sample an action. Returns (action, value, logp) as cpu tensors."""
         mu, log_std, value = self.net(_t(obs, self.device))
         action = mu + log_std.exp() * torch.randn_like(mu)
-        logp = gaussian_logp(action, mu, log_std)
-        return action.cpu(), value.cpu(), logp.cpu()
+        return action.cpu(), value.cpu(), gaussian_logp(action, mu, log_std).cpu()
 
     @torch.no_grad()
     def eval_act(self, obs):
@@ -119,32 +145,39 @@ class PPO:
     def value(self, obs):
         return self.net(_t(obs, self.device))[2].cpu()
 
-    # --- average-reward estimator (the only thing the variants change) ------
-    def update_eta(self, reward, value, time):
-        """Refresh ``eta`` and ``value_bias`` from a fresh [T, B] batch."""
+    # --- average-reward rate (delegated to the inherited tabular calc_new_rho)
+    #
+    # ``rho_reduce`` controls how the [T, B] batch feeds the tabular updater:
+    #   "mean" -> one call with the batch means  (per-batch EWMA, e.g. Rsmart/APO)
+    #   "sum"  -> one call with the batch sums    (cumulative, e.g. SMART)
+    #   "none" -> one call per transition         (needed by Harmonic's pos/neg
+    #                                              split; matches the source)
+    # Aggregating ("mean"/"sum") keeps the update O(1) per batch instead of
+    # O(T*B) Python calls.
+    rho_reduce = "mean"
+
+    def update_rho(self, reward, value, time):
+        """Refresh ``rho`` and ``value_bias`` from a fresh [T, B] batch."""
         if not self.longrun:
             return
         vm = value.mean().item()
         self.value_bias = vm if self.value_bias is None \
-            else (1 - self.lr_eta) * self.value_bias + self.lr_eta * vm
-        self.eta = self._estimate_eta(reward, time)
-
-    def _estimate_eta(self, reward, time):
-        # Relaxed-SMART / APO: ratio of EWMAs (== EWMA(reward) in the MDP case).
-        rm, tm = reward.mean().item(), time.mean().item()
-        if getattr(self, "_rho_r", None) is None:
-            self._rho_r, self._rho_t = rm, tm
-        else:
-            self._rho_r = (1 - self.lr_eta) * self._rho_r + self.lr_eta * rm
-            self._rho_t = (1 - self.lr_eta) * self._rho_t + self.lr_eta * tm
-        return self._rho_r / max(self._rho_t, 1e-8)
+            else (1 - self.rho_lr) * self.value_bias + self.rho_lr * vm
+        r, t = reward.reshape(-1), time.reshape(-1)
+        if self.rho_reduce == "none":
+            for ri, ti in zip(r.tolist(), t.tolist()):
+                self.calc_new_rho(ri, ti, None, None)
+        elif self.rho_reduce == "sum":
+            self.calc_new_rho(r.sum().item(), t.sum().item(), None, None)
+        else:  # "mean"
+            self.calc_new_rho(r.mean().item(), t.mean().item(), None, None)
 
     # --- update -------------------------------------------------------------
     def _gae(self, reward, value, nd, bootstrap_value, time):
         adv = torch.zeros_like(reward)
         nxt, gae = bootstrap_value, 0.0
         for t in reversed(range(reward.shape[0])):
-            delta = reward[t] - self.eta * time[t] + self.discount * nxt * nd[t] - value[t]
+            delta = reward[t] - self.rho * time[t] + self.discount * nxt * nd[t] - value[t]
             gae = delta + self.discount * self.gae_lambda * nd[t] * gae
             adv[t] = gae
             nxt = value[t]
@@ -156,7 +189,7 @@ class PPO:
         reward, value, time = b["rew"], b["val"], b["time"]
         nd = 1.0 - b["term"]  # terminations reset the return; truncations bootstrap
 
-        self.update_eta(reward, value, time)
+        self.update_rho(reward, value, time)
         adv, ret = self._gae(reward, value, nd, _t(bootstrap_value, self.device), time)
         ret = ret - self.rm_vbias_coeff * (self.value_bias or 0.0)
 
@@ -165,7 +198,6 @@ class PPO:
             m = valid > 0
             adv = (adv - adv[m].mean()) / (adv[m].std() + 1e-6)
 
-        # Flatten [T, B] -> [N] and run epochs x minibatches of SGD.
         obs = b["obs"].reshape(-1, b["obs"].shape[-1])
         act = b["act"].reshape(-1, b["act"].shape[-1])
         old_logp, adv, ret, valid = (x.reshape(-1) for x in (b["logp"], adv, ret, valid))
@@ -190,57 +222,23 @@ class PPO:
                 stats["loss"].append(loss.item())
                 stats["grad_norm"].append(gn.item())
                 stats["entropy"].append(entropy.item())
-        return {"eta": self.eta, "value_bias": self.value_bias or 0.0,
+        return {"rho": self.rho, "value_bias": self.value_bias or 0.0,
                 **{k: float(np.mean(v)) for k, v in stats.items()}}
 
 
-def _vmean(x, valid):
-    """Mean of x over valid (>0) entries; falls back to plain mean if none."""
-    s = valid.sum()
-    return (x * valid).sum() / s if s > 0 else x.mean()
-
-
-class RsmartPPO(PPO):
-    """APO / Relaxed-SMART: eta = EWMA(reward) / EWMA(time)."""
+class RsmartPPO(PPO, RelaxedSMART):
+    """APO / Relaxed-SMART: rho = EWMA(reward) / EWMA(time), per batch."""
     longrun = True
+    rho_reduce = "mean"
 
 
-class SmartPPO(PPO):
-    """SMART: eta = sum(reward) / sum(time) (cumulative running average)."""
+class SmartPPO(PPO, SMART):
+    """SMART: rho = Σreward / Σtime (cumulative running average)."""
     longrun = True
-
-    def _estimate_eta(self, reward, time):
-        self._tot_r = getattr(self, "_tot_r", 0.0) + reward.sum().item()
-        self._tot_t = getattr(self, "_tot_t", 0.0) + time.sum().item()
-        return self._tot_r / max(self._tot_t, 1e-8)
+    rho_reduce = "sum"
 
 
-class HarmonicPPO(PPO):
-    """Harmonic-mean estimator over the positive/negative reward streams.
-
-    ``weighted=True`` uses w=reward (WeightedHarmonic); False uses w=1 (Harmonic).
-    """
+class HarmonicPPO(PPO, Harmonic):
+    """Harmonic-mean rho over the positive/negative reward streams."""
     longrun = True
-
-    def __init__(self, *args, weighted=True, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.weighted = weighted
-        self._pr = self._nr = self._pw1 = self._nw1 = self._pw2 = self._nw2 = self._zw = 0.0
-
-    def _estimate_eta(self, reward, time):
-        a = self.lr_eta
-        for r, t in zip(reward.reshape(-1).tolist(), time.reshape(-1).tolist()):
-            pos, neg, zero = float(r > 0), float(r < 0), float(r == 0)
-            w = r if self.weighted else 1.0
-            rate = 0.0 if zero else t / r
-            self._pr = (1 - a) * self._pr + a * rate * pos * w
-            self._pw1 = (1 - a) * self._pw1 + a * pos * w
-            self._pw2 = (1 - a) * self._pw2 + a * pos
-            self._nr = (1 - a) * self._nr + a * rate * neg * w
-            self._nw1 = (1 - a) * self._nw1 + a * neg * w
-            self._nw2 = (1 - a) * self._nw2 + a * neg
-            self._zw = (1 - a) * self._zw + a * zero
-        h_pos = 0.0 if self._pr == 0 else self._pw1 / self._pr
-        h_neg = 0.0 if self._nr == 0 else self._nw1 / self._nr
-        denom = self._pw2 + self._nw2 + self._zw
-        return 0.0 if denom == 0 else (h_pos * self._pw2 + h_neg * self._nw2) / denom
+    rho_reduce = "none"  # per-transition: the pos/neg split needs each reward
