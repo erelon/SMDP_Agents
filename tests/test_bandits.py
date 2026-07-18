@@ -33,7 +33,7 @@ class EpsilonGreedyBanditTests(unittest.TestCase):
         agent.learn("s", 0, -1.0, None, -1.0)
         self.assertEqual(agent.q_table["s"][0], 1.0)
 
-    def test_bandit_reset_clears_tables_but_currently_does_not_reseed(self):
+    def test_bandit_reset_clears_tables_and_reseeds(self):
         agent = MAB("mab", [0, 1], exploration_rate=1, seed=6)
         agent.act("s")
         next_random = agent.rng.random()

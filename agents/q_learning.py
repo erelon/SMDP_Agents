@@ -14,6 +14,7 @@ class ContinuousQLearning(Agent):
         self.rho = 0
 
     def reset(self):
+        super().reset()
         self.q_table = {}
         self.rho = 0
 
@@ -41,6 +42,7 @@ class ContinuousQLearning(Agent):
         self.q_table[state][action] += self.learning_rate * td_error
 
     def learn(self, state, action, reward, next_state, time):
+        super().learn(state, action, reward, next_state, time)
         self.initialize_table(next_state)
         best_next_action = self.eval(next_state)
         # Sometimes, it matters to the table updates -- see r-learning on-policy updates

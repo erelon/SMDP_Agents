@@ -161,6 +161,9 @@ class DeepQWrapper(ContinuousQLearning):
         return self.set_target(reward, time, best_next_q)
 
     def learn(self, state, action, reward, next_state, time):
+        # Skip ContinuousQLearning's tabular update while retaining the base
+        # Agent bookkeeping through the super chain.
+        super(ContinuousQLearning, self).learn(state, action, reward, next_state, time)
         # ── Compute TD quantities using current Q-network ──────────────────
         td_target = self._compute_td_target(state, action, reward, next_state, time)
         q_vals_now = self._q_values(state, self.network)

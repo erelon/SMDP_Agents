@@ -4,7 +4,8 @@ from .oracle import Oracle
 from .random_agent import RandomAgent
 from .q_learning import QLearning, ContinuousQLearning
 from .r_learning import ContinuousRLearning, RLearning
-from .smart_r import SMART, RelaxedSMART
+from .smart_r import SMART
+from .relaxed_smart import RelaxedSMART
 from .harmonic_r import Harmonic, WeightedHarmonic
 from .bandits import MAB, ContinuesMAB, UCB, ContinuosUCB
 from .deep_q_wrapper import DeepQWrapper

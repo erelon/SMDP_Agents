@@ -67,30 +67,22 @@ class CumulativeTimeRate:
         return self.value
 
 
-class RatioEmaRate:
-    """Weighted reward EMA divided by an unweighted duration EMA."""
-
-    def __init__(self, beta: float, duration_beta: float = None):
-        if duration_beta is None:
-            duration_beta = beta
-        self.reward_ema = ExponentialMovingAverage(beta)
-        self.duration_ema = ExponentialMovingAverage(duration_beta)
-        self.value = 0.0
-
+class CumulativeStepRate:
+    def __init__(self):
+        self.reset()
+        
     def reset(self) -> None:
-        self.reward_ema.reset()
-        self.duration_ema.reset()
+        self.total_rates = 0.0
+        self.total_steps = 0.0
         self.value = 0.0
-
-    @property
-    def rho(self) -> float:
-        return self.value
 
     def update(self, reward: float, duration: float, weight: float) -> float:
+        reward = _require_finite("reward", reward)
         duration = _require_duration(duration)
-        weighted_reward = self.reward_ema.update(reward, weight)
-        average_duration = self.duration_ema.update(duration, 1.0)
-        self.value = weighted_reward / average_duration
+        weight = _require_finite("weight", weight)
+        self.total_rates += (reward/duration) * weight
+        self.total_steps += 1
+        self.value = self.total_rates/ self.total_steps
         return self.value
 
 

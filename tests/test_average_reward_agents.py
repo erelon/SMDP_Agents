@@ -5,7 +5,7 @@ from tests._loader import load_tabular_modules
 
 MODULES = load_tabular_modules()
 SMART = MODULES["smart_r"].SMART
-RelaxedSMART = MODULES["smart_r"].RelaxedSMART
+RelaxedSMART = MODULES["relaxed_smart"].RelaxedSMART
 Harmonic = MODULES["harmonic_r"].Harmonic
 WeightedHarmonic = MODULES["harmonic_r"].WeightedHarmonic
 
@@ -35,11 +35,16 @@ def reference_harmonic(sequence, beta, weighted):
 class SmartTests(unittest.TestCase):
     def test_smart_tracks_cumulative_reward_per_time(self):
         agent = SMART("smart", [0], rho_learning_rate=0.2)
-        agent.calc_new_rho(4.0, 2.0, None, None)
+        agent.act("state")
+
+        agent.learn("state", 0, 4.0, "state", 2.0)
         self.assertEqual(agent.rho, 2.0)
-        agent.calc_new_rho(-1.0, 1.0, None, None)
+        self.assertEqual(agent.step_count, 1)
+
+        agent.learn("state", 0, -1.0, "state", 1.0)
         self.assertEqual(agent.rho, 1.0)
-        self.assertEqual((agent.total_reward, agent.total_time, agent.step_count), (3.0, 3.0, 2))
+        self.assertEqual((agent.total_reward, agent.total_time), (3.0, 3.0))
+        self.assertEqual(agent.step_count, 2)
 
     def test_smart_zero_total_time_raises(self):
         agent = SMART("smart", [0])

@@ -58,7 +58,13 @@ class QLearningTests(unittest.TestCase):
         self.assertTrue(agent.policy_changed)
         self.assertEqual(agent.eval("s"), 1)
 
-    def test_reset_clears_q_and_rho_but_currently_does_not_reseed_rng(self):
+    def test_delegating_learn_is_counted_once(self):
+        agent = QLearning("q", [0], exploration_rate=0)
+        agent.act("s")
+        agent.learn("s", 0, reward=1.0, next_state="s", time=7)
+        self.assertEqual(agent.step_count, 1)
+
+    def test_reset_clears_q_and_rho_and_reseeds_rng(self):
         agent = ContinuousQLearning("q", [0, 1], seed=3)
         first = agent.rng.random()
         agent.q_table["s"] = {0: 1}
@@ -66,9 +72,8 @@ class QLearningTests(unittest.TestCase):
         agent.reset()
         second = agent.rng.random()
         fresh = ContinuousQLearning("fresh", [0, 1], seed=3)
-        fresh.rng.random()
         self.assertEqual(second, fresh.rng.random())
-        self.assertNotEqual(first, second)
+        self.assertEqual(first, second)
         self.assertEqual(agent.q_table, {})
         self.assertEqual(agent.rho, 0)
 

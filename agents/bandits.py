@@ -10,6 +10,7 @@ class ContinuesMAB(Agent):
         self.total_reward = {}
 
     def reset(self):
+        super().reset()
         self.q_table = {}
         self.total_time = {}
         self.total_reward = {}
@@ -27,6 +28,7 @@ class ContinuesMAB(Agent):
         return max(self.q_table[state], key=self.q_table[state].get)
 
     def learn(self, state, action, reward, next_state, time):
+        super().learn(state, action, reward, next_state, time)
         if state not in self.q_table:
             self.q_table[state] = {action: 0 for action in self.action_space}
         if state not in self.total_time:
@@ -48,6 +50,7 @@ class MAB(Agent):
         self.total_reward = {}
 
     def reset(self):
+        super().reset()
         self.q_table = {}
         self.total_steps = {}
         self.total_reward = {}
@@ -65,6 +68,7 @@ class MAB(Agent):
         return max(self.q_table[state], key=self.q_table[state].get)
 
     def learn(self, state, action, reward, next_state, time):
+        super().learn(state, action, reward, next_state, time)
         if state not in self.q_table:
             self.q_table[state] = {action: 0 for action in self.action_space}
         if state not in self.total_steps:
@@ -85,6 +89,7 @@ class UCB(Agent):
         self.total_reward = {}
 
     def reset(self):
+        super().reset()
         self.q_table = {}
         self.total_steps = {}
         self.total_reward = {}
@@ -102,6 +107,7 @@ class UCB(Agent):
         return max(self.q_table[state], key=self.q_table[state].get)
 
     def learn(self, state, action, reward, next_state, time):
+        super().learn(state, action, reward, next_state, time)
         if state not in self.q_table:
             self.q_table[state] = {action: 0 for action in self.action_space}
         if state not in self.total_steps:
@@ -119,6 +125,7 @@ class ContinuosUCB(Agent):
         self.reset()
 
     def reset(self):
+        super().reset()
         self.q_table = {}
         self.total_time = {}
         self.total_reward = {}
@@ -138,6 +145,7 @@ class ContinuosUCB(Agent):
         return max(self.q_table[state], key=self.q_table[state].get)
 
     def learn(self, state, action, reward, next_state, time):
+        super().learn(state, action, reward, next_state, time)
         if state not in self.q_table:
             self.q_table[state] = {action: 0 for action in self.action_space}
         if state not in self.total_time:
@@ -148,4 +156,3 @@ class ContinuosUCB(Agent):
         self.total_reward[state][action] += reward
         self._check_convergence(state, action, self.total_reward[state][action] / self.total_time[state][action], True)
         self.q_table[state][action] = (self.total_reward[state][action] / self.total_time[state][action])
-

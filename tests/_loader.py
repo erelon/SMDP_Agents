@@ -22,6 +22,7 @@ def load_tabular_modules():
         "q_learning",
         "r_learning",
         "smart_r",
+        "relaxed_smart",
         "harmonic_r",
         "bandits",
         "oracle",

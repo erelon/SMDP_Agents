@@ -16,7 +16,7 @@ class DummyAgent(Agent):
     eval = act
 
     def learn(self, state, action, reward, next_state, time):
-        return None
+        return super().learn(state, action, reward, next_state, time)
 
 
 class RestrictedEnvironment:
@@ -56,6 +56,15 @@ class AgentCoreTests(unittest.TestCase):
         self.assertEqual(agent.rng.random(), first)
         self.assertEqual(agent.q_table, {})
         self.assertFalse(agent.policy_changed)
+        self.assertEqual(agent.step_count, 0)
+
+    def test_learn_calls_are_counted_and_reset_clears_count(self):
+        agent = DummyAgent("core", [0, 1])
+        agent.learn("s", 0, 1, "next", 1)
+        agent.learn("next", 1, 2, "end", 1)
+        self.assertEqual(agent.step_count, 2)
+        agent.reset()
+        self.assertEqual(agent.step_count, 0)
 
 
 class SimpleAgentTests(unittest.TestCase):
@@ -66,17 +75,19 @@ class SimpleAgentTests(unittest.TestCase):
         self.assertEqual(oracle.act(4), 5)
         self.assertEqual(oracle.eval(8), 9)
         self.assertIsNone(oracle.learn(None, None, None, None, None))
+        self.assertEqual(oracle.step_count, 1)
+        oracle.reset()  # Oracle deliberately does not call super().reset().
+        self.assertEqual(oracle.step_count, 0)
 
-    def test_random_agent_sequence_is_seeded_but_reset_is_currently_noop(self):
+    def test_random_agent_reset_restarts_seeded_sequence(self):
         agent = RandomAgent("random", [0, 1, 2])
         first = [agent.act(None) for _ in range(4)]
         agent.reset()
         second = [agent.act(None) for _ in range(4)]
         fresh = RandomAgent("fresh", [0, 1, 2])
         expected_first = [fresh.act(None) for _ in range(4)]
-        expected_second = [fresh.act(None) for _ in range(4)]
         self.assertEqual(first, expected_first)
-        self.assertEqual(second, expected_second)
+        self.assertEqual(second, expected_first)
 
 
 if __name__ == "__main__":

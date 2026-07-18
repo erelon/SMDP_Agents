@@ -8,7 +8,7 @@ class Oracle(Agent):
         self.env_secret = env_secret
 
     def reset(self):
-        pass
+        super().reset()
 
     def act(self, state):
         return self.env_secret(state)
@@ -17,5 +17,4 @@ class Oracle(Agent):
         return self.act(state)
 
     def learn(self, state, action, reward, next_state, time):
-        pass
-
+        super().learn(state, action, reward, next_state, time)
