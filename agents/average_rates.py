@@ -162,11 +162,4 @@ class WeightedHarmonicRate:
         return self.value
 
 
-class HarmonicRate(WeightedHarmonicRate):
-    """Unit-weight specialization of :class:`WeightedHarmonicRate`."""
 
-    def update(self, reward: float, duration: float, weight: float) -> float:
-        weight = _require_finite("weight", weight)
-        if weight != 1.0:
-            raise ValueError("HarmonicRate requires weight=1.0")
-        return super().update(reward, duration, 1.0)
