@@ -1,4 +1,5 @@
 from .average_rates import ExponentialMovingAverage
+from .r_learning import ContinuousRLearning
 from .smart_r import SMART
 
 
@@ -31,7 +32,13 @@ class RelaxedSMART(SMART):
     def calc_new_rho(self, reward: float, time: float, td_target, td_error):
         # Retain SMART's counters, then replace its cumulative estimate with
         # the Relaxed SMART exponentially smoothed estimate.
-        super().calc_new_rho(reward, time, td_target, td_error)
+        # super().calc_new_rho(reward, time, td_target, td_error)
         reward_ema = self.reward_ema.update(reward, 1.0)
         duration_ema = self.duration_ema.update(time, 1.0)
-        self.rho = reward_ema / duration_ema
+        try:
+            self.rho = reward_ema / duration_ema
+        except: 
+            if duration_ema == 0:
+                raise ZeroDivisionError("Relaxed SMART requires nonzero elapsed time") from None
+            raise
+
