@@ -49,8 +49,13 @@ including unusual edge-case behavior, rather than silently correcting it.
 Run all dependency-free tests:
 
 ```bash
-python -m unittest discover -s tests -v
+python -m tests
 ```
+
+The screen runner displays successful tests in green, skips and warnings in
+yellow, and failures/errors in red. The suite remains compatible with plain
+`python -m unittest discover -s tests -v` for tools that require non-colored
+standard unittest output.
 
 Deep tests are skipped automatically when PyTorch is unavailable. In a complete
 environment, install the repository requirements and rerun the same command.
