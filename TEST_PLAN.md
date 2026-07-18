@@ -53,9 +53,32 @@ python -m tests
 ```
 
 The screen runner displays successful tests in green, skips and warnings in
-yellow, and failures/errors in red. The suite remains compatible with plain
+yellow, and failures/errors in bright red. The suite remains compatible with plain
 `python -m unittest discover -s tests -v` for tools that require non-colored
 standard unittest output.
+
+Tests are executed in contiguous algorithm groups. The final summary reports
+only nonzero ok, warning, skip, and failure counts for every group, as well as
+unittest's overall totals.
+
+Run one algorithm group by supplying its fully qualified test class:
+
+```bash
+python -m tests tests.test_q_and_r_learning.RLearningTests
+```
+
+Run one test by supplying its fully qualified test method:
+
+```bash
+python -m tests tests.test_q_and_r_learning.RLearningTests.test_rho_trick_skips_non_greedy_action
+```
+
+The same names work with plain unittest when non-colored output is required:
+
+```bash
+python -m unittest -v tests.test_q_and_r_learning.RLearningTests
+python -m unittest -v tests.test_q_and_r_learning.RLearningTests.test_rho_trick_skips_non_greedy_action
+```
 
 Deep tests are skipped automatically when PyTorch is unavailable. In a complete
 environment, install the repository requirements and rerun the same command.
