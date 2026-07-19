@@ -4,11 +4,13 @@ import unittest
 from tests._loader import load_tabular_modules
 
 
-BANDITS = load_tabular_modules()["bandits"]
-MAB = BANDITS.MAB
-ContinuesMAB = BANDITS.ContinuesMAB
-UCB = BANDITS.UCB
-ContinuosUCB = BANDITS.ContinuosUCB
+MODULES = load_tabular_modules()
+MAB_EPSILON = MODULES["mab-epsilon"]
+MAB_UCB = MODULES["mab-ucb"]
+MAB = MAB_EPSILON.MAB
+ContinuesMAB = MAB_EPSILON.ContinuesMAB
+UCB = MAB_UCB.UCB
+ContinuosUCB = MAB_UCB.ContinuosUCB
 
 
 class EpsilonGreedyBanditTests(unittest.TestCase):

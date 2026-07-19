@@ -24,7 +24,8 @@ def load_tabular_modules():
         "smart_r",
         "relaxed_smart",
         "harmonic_r",
-        "bandits",
+        "mab-epsilon",
+        "mab-ucb",
         "oracle",
         "random_agent",
     )
