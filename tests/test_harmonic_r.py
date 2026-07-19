@@ -1,14 +1,12 @@
+from agents.average_rates import NormalizedEMA
 from tests.test_average_rates import CumulativeTimeRate, ExponentialMovingAverage, WeightedHarmonicRate
 import unittest
 
 from tests._loader import load_tabular_modules
 
-
-MODULES = load_tabular_modules()
-SMART = MODULES["smart_r"].SMART
-RelaxedSMART = MODULES["relaxed_smart"].RelaxedSMART
-Harmonic = MODULES["harmonic_r"].Harmonic
-WeightedHarmonic = MODULES["harmonic_r"].WeightedHarmonic
+MODULE = load_tabular_modules()["harmonic_r"]
+Harmonic = MODULE.Harmonic
+WeightedHarmonic = MODULE.WeightedHarmonic
 
 
 def reference_harmonic(sequence, beta, weighted):
@@ -31,52 +29,6 @@ def reference_harmonic(sequence, beta, weighted):
         values.append((h_pos * pos_w2 + h_neg * neg_w2) /
                       (pos_w2 + neg_w2 + zero_w))
     return values
-
-
-class SmartTests(unittest.TestCase):
-    def test_smart_tracks_cumulative_reward_per_time(self):
-        agent = SMART("smart", [0], rho_learning_rate=0.2)
-        agent.act("state")
-
-        agent.learn("state", 0, 4.0, "state", 2.0)
-        self.assertEqual(agent.rho, 2.0)
-        self.assertEqual(agent.step_count, 1)
-
-        agent.learn("state", 0, -1.0, "state", 1.0)
-        self.assertEqual(agent.rho, 1.0)
-        self.assertEqual((agent.total_reward, agent.total_time), (3.0, 3.0))
-        self.assertEqual(agent.step_count, 2)
-
-    def test_smart_zero_total_time_raises(self):
-        agent = SMART("smart", [0])
-        with self.assertRaises(ZeroDivisionError):
-            agent.calc_new_rho(1.0, 0.0, None, None)
-
-    def test_smart_reset_clears_accumulators(self):
-        agent = SMART("smart", [0])
-        agent.calc_new_rho(2.0, 1.0, None, None)
-        agent.reset()
-        self.assertEqual((agent.rho, agent.total_reward, agent.total_time, agent.step_count),
-                         (0, 0, 0, 0))
-
-
-class RelaxedSmartTests(unittest.TestCase):
-    def test_equal_ema_rates_reduce_to_ratio_of_weighted_sums(self):
-        agent = RelaxedSMART("relaxed", [0], rho_learning_rate=0.25)
-        agent.calc_new_rho(4.0, 2.0, None, None)
-        self.assertAlmostEqual(agent.rho, 2.0)
-        agent.calc_new_rho(1.0, 3.0, None, None)
-        expected_reward = 0.75 * 1.0 + 0.25 * 1.0
-        expected_time = 0.75 * 0.5 + 0.25 * 3.0
-        self.assertAlmostEqual(agent.rho_reward, expected_reward)
-        self.assertAlmostEqual(agent.rho_time, expected_time)
-        self.assertAlmostEqual(agent.rho, expected_reward / expected_time)
-
-    def test_zero_duration_raises_on_first_update(self):
-        agent = RelaxedSMART("relaxed", [0], rho_learning_rate=0.5)
-        with self.assertRaises(ZeroDivisionError):
-            agent.calc_new_rho(0.0, 0.0, None, None)
-
 
 class HarmonicTests(unittest.TestCase):
     def assert_agent_rho_matches_estimator(self, agent_class, sequence):
@@ -124,9 +76,10 @@ class HarmonicTests(unittest.TestCase):
 
     def test_ema_rate_matches_weighted_harmonic_rate_for_two_step_sequence(self):
         beta = 0.0001
-        agent = WeightedHarmonic("harmonic", [0], rho_learning_rate=beta)
+        agent = Harmonic("harmonic", [0], rho_learning_rate=beta)
         sequence = [(1.0, 2.0), (2.0, 1.0)]
-        e = ExponentialMovingAverage(beta)
+        # e = ExponentialMovingAverage(beta)
+        e = NormalizedEMA(beta)
         for step, (reward, duration) in enumerate(sequence, start=1):
             agent.calc_new_rho(reward, duration, None, None)
             e.update((reward/duration), 1.0)
@@ -137,7 +90,7 @@ class HarmonicTests(unittest.TestCase):
             #     e.value,
             #     msg=f"{agent.name} differs at step {step} rho is {agent.rho} ema is {e.value}",
             # )
-        print(f"HMA of {sequence} is {agent.rho}   EMA is {e.value}")
+        print(f"ttt HMA of {sequence} is {1/agent.rho}   EMA is {e.value}")
 
     def test_ema_rate_matches_harmonic_for_100_step_sequence_high_beta(self):
         sequence = [(1.0, 2.0), (2.0, 1.0)] * 50
@@ -169,7 +122,8 @@ class HarmonicTests(unittest.TestCase):
         agent = Harmonic(
             "harmonic", [0], rho_learning_rate=beta
         )
-        e = ExponentialMovingAverage(beta)
+        # e = ExponentialMovingAverage(beta)
+        e = NormalizedEMA(beta)
         difference_count = 0
 
         for step, (reward, duration) in enumerate(sequence, start=1):

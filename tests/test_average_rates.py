@@ -11,6 +11,7 @@ SPEC.loader.exec_module(average_rates)
 ExponentialMovingAverage = average_rates.ExponentialMovingAverage
 CumulativeTimeRate = average_rates.CumulativeTimeRate
 WeightedHarmonicRate = average_rates.WeightedHarmonicRate
+NormHMA = average_rates.NormHMA
 
 
 class ExponentialMovingAverageTests(unittest.TestCase):
@@ -143,6 +144,59 @@ class WeightedHarmonicRateTests(unittest.TestCase):
         for reward, duration in sequence:
             r  = harmonic.update(reward, duration, 1.0)
         self.assertAlmostEqual(r,0.8)
+
+
+class NormHMATests(unittest.TestCase):
+    def assert_matches_weighted_harmonic_rate(self, sequence, beta=0.05):
+        weighted_harmonic = WeightedHarmonicRate(beta)
+        norm_hma = NormHMA(beta)
+
+        for step, (reward, duration) in enumerate(sequence, start=1):
+            weighted_value = weighted_harmonic.update(reward, duration, 1.0)
+            norm_value = norm_hma.update(reward, duration, 1.0)
+
+            self.assertAlmostEqual(
+                norm_value,
+                weighted_value,
+                msg=(
+                    f"NormHMA differs from WeightedHarmonicRate at step {step}: "
+                    f"reward={reward}, duration={duration}, "
+                    f"norm_hma={norm_value}, weighted_harmonic={weighted_value}"
+                ),
+            )
+
+    def test_matches_weighted_harmonic_rate_for_positive_and_zero_rewards(self):
+        sequence = [
+            (1.0, 2.0), (3.0, 1.0), (0.0, 4.0), (2.0, 3.0),
+            (5.0, 2.0), (0.0, 1.0), (4.0, 5.0), (1.5, 2.5),
+            (8.0, 4.0), (2.5, 1.5), (6.0, 3.0),
+        ]
+        self.assert_matches_weighted_harmonic_rate(sequence)
+
+    def test_matches_weighted_harmonic_rate_for_negative_rewards(self):
+        sequence = [
+            (-1.0, 2.0), (-3.0, 1.0), (-2.0, 4.0), (-5.0, 3.0),
+            (-0.5, 2.0), (-4.0, 1.0), (-7.0, 5.0), (-1.5, 2.5),
+            (-8.0, 4.0), (-2.5, 1.5), (-6.0, 3.0),
+        ]
+        self.assert_matches_weighted_harmonic_rate(sequence)
+
+    def test_matches_weighted_harmonic_rate_for_mixed_sign_rewards(self):
+        sequence = [
+            (2.0, 1.0), (-1.0, 2.0), (4.0, 3.0), (-3.0, 1.0),
+            (0.0, 2.0), (1.5, 4.0), (-2.5, 2.5), (6.0, 3.0),
+            (-4.0, 1.5), (3.0, 2.0), (-0.5, 1.0),
+        ]
+        self.assert_matches_weighted_harmonic_rate(sequence)
+
+    def test_matches_weighted_harmonic_rate_for_strictly_positive_rewards(self):
+        negative_sequence = [
+            (-1.0, 2.0), (-3.0, 1.0), (-2.0, 4.0), (-5.0, 3.0),
+            (-0.5, 2.0), (-4.0, 1.0), (-7.0, 5.0), (-1.5, 2.5),
+            (-8.0, 4.0), (-2.5, 1.5), (-6.0, 3.0),
+        ]
+        sequence = [(abs(reward), duration) for reward, duration in negative_sequence]
+        self.assert_matches_weighted_harmonic_rate(sequence)
 
 
 if __name__ == "__main__":

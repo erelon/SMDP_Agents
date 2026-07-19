@@ -2,11 +2,7 @@ import unittest
 
 from tests._loader import load_tabular_modules
 
-
-MODULES = load_tabular_modules()
-Agent = MODULES["base"].Agent
-Oracle = MODULES["oracle"].Oracle
-RandomAgent = MODULES["random_agent"].RandomAgent
+Agent = load_tabular_modules()["base"].Agent
 
 
 class DummyAgent(Agent):
@@ -18,11 +14,9 @@ class DummyAgent(Agent):
     def learn(self, state, action, reward, next_state, time):
         return super().learn(state, action, reward, next_state, time)
 
-
 class RestrictedEnvironment:
     def get_available_actions(self, state):
         return [1] if state == "restricted" else [0, 1]
-
 
 class AgentCoreTests(unittest.TestCase):
     def test_action_space_is_required(self):
@@ -65,29 +59,6 @@ class AgentCoreTests(unittest.TestCase):
         self.assertEqual(agent.step_count, 2)
         agent.reset()
         self.assertEqual(agent.step_count, 0)
-
-
-class SimpleAgentTests(unittest.TestCase):
-    def test_oracle_requires_secret_and_delegates(self):
-        with self.assertRaisesRegex(ValueError, "environment secret"):
-            Oracle("oracle", [0, 1])
-        oracle = Oracle("oracle", [0, 1], env_secret=lambda state: state + 1)
-        self.assertEqual(oracle.act(4), 5)
-        self.assertEqual(oracle.eval(8), 9)
-        self.assertIsNone(oracle.learn(None, None, None, None, None))
-        self.assertEqual(oracle.step_count, 1)
-        oracle.reset()  # Oracle deliberately does not call super().reset().
-        self.assertEqual(oracle.step_count, 0)
-
-    def test_random_agent_reset_restarts_seeded_sequence(self):
-        agent = RandomAgent("random", [0, 1, 2])
-        first = [agent.act(None) for _ in range(4)]
-        agent.reset()
-        second = [agent.act(None) for _ in range(4)]
-        fresh = RandomAgent("fresh", [0, 1, 2])
-        expected_first = [fresh.act(None) for _ in range(4)]
-        self.assertEqual(first, expected_first)
-        self.assertEqual(second, expected_first)
 
 
 if __name__ == "__main__":

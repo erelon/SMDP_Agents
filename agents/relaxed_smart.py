@@ -1,3 +1,4 @@
+from agents.average_rates import NormalizedEMA
 from .average_rates import ExponentialMovingAverage
 from .r_learning import ContinuousRLearning
 from .smart_r import SMART
@@ -13,8 +14,10 @@ class RelaxedSMART(SMART):
             name, action_space, learning_rate, exploration_rate,
             with_rho_trick, rho_learning_rate, **kwargs
         )
-        self.reward_ema = ExponentialMovingAverage(rho_learning_rate)
-        self.duration_ema = ExponentialMovingAverage(rho_learning_rate)
+        self.reward_ema = NormalizedEMA(rho_learning_rate)
+        self.duration_ema = NormalizedEMA(rho_learning_rate)
+        # self.reward_ema = ExponentialMovingAverage(rho_learning_rate)
+        # self.duration_ema = ExponentialMovingAverage(rho_learning_rate)
 
     @property
     def rho_reward(self):
