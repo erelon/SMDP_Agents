@@ -67,6 +67,99 @@ class NormalizedEMA:
         self.value = self.unnorm.value / self.weight.value
         return self.value
 
+class ExponentialMovingTimeRate:
+    """Unnormalized exponential moving time-rate estimator."""
+
+    def __init__(self, beta: float):
+        beta = _require_finite("beta", beta)
+        if not 0 < beta <= 1:
+            raise ValueError("beta must be in the interval (0, 1]")
+
+        self.beta = beta
+        self.lambda_ = -math.log(1-beta)
+        self.reset()
+
+    def reset(self) -> None:
+        self.value = 0.0
+
+    @property
+    def rho(self) -> float:
+        return self.value
+
+    def update(
+        self,
+        reward: float,
+        time: float,
+        weight: float = 1.0,
+    ) -> float:
+        reward = _require_finite("reward", reward)
+        time = _require_duration(time)
+        weight = _require_finite("weight", weight)
+
+        gain = -math.expm1(-self.lambda_ * time)
+
+        self.value += (
+            gain / time
+        ) * (
+            reward * weight - self.value * time
+        )
+
+        return self.value
+
+
+class NormalizedExponentialMovingTimeRate:
+    """Normalized exponential moving time-rate estimator.
+
+    Normalization removes the bias caused by zero initialization.
+    """
+
+    def __init__(self, beta: float):
+        beta = _require_finite("beta", beta)
+        if not 0 < beta <= 1:
+            raise ValueError("beta must be in the interval (0, 1]")
+
+        self.beta = beta
+        self.lambda_ = -math.log(1-beta)
+        self.reset()
+
+    def reset(self) -> None:
+        self.unnormalized_value = 0.0
+        self.normalizer = 0.0
+        self.value = 0.0
+
+    @property
+    def rho(self) -> float:
+        return self.value
+
+    def update(
+        self,
+        reward: float,
+        time: float,
+        weight: float = 1.0,
+    ) -> float:
+        reward = _require_finite("reward", reward)
+        time = _require_duration(time)
+        weight = _require_finite("weight", weight)
+
+        retention = math.exp(-self.lambda_ * time)
+        gain = -math.expm1(-self.lambda_ * time)
+
+        self.unnormalized_value = (
+            retention * self.unnormalized_value
+            + gain * (reward * weight / time)
+        )
+
+        self.normalizer = (
+            retention * self.normalizer
+            + gain
+        )
+
+        self.value = (
+            self.unnormalized_value / self.normalizer
+        )
+
+        return self.value
+
 # Cumulative reward-rate estimators
 
 class CumulativeTimeRate:
