@@ -1,4 +1,6 @@
 from .r_learning import ContinuousRLearning
+from .average_rates import WeightedHarmonicRate
+import unittest
 
 
 class WeightedHarmonic(ContinuousRLearning):
@@ -6,10 +8,12 @@ class WeightedHarmonic(ContinuousRLearning):
                  rho_learning_rate=0.3, **kwargs):
         super().__init__(name, action_space, learning_rate, exploration_rate, with_rho_trick, rho_learning_rate,
                          **kwargs)
+        self.hma = WeightedHarmonicRate(rho_learning_rate)
         self.reset()
 
     def reset(self):
         super().reset()
+        self.hma.reset()
         self.pos_reciprocal_rho = 0.0
         self.neg_reciprocal_rho = 0.0
         self.neg_w1 = 0
@@ -43,8 +47,12 @@ class WeightedHarmonic(ContinuousRLearning):
 
     def calc_new_rho(self, reward, time, td_target, td_error):
         self.HMA_rho(reward, time, reward)  # Weighted HMA with weight = reward
-
+        self.hma.update(reward, time, reward)
+        # if not (self.hma.value == self.rho):
+        #     print(f"the HMA rho estiates of agent {self.name} do not match.")
+        #     raise ValueError
 
 class Harmonic(WeightedHarmonic):
     def calc_new_rho(self, reward, time, td_target, td_error):
         self.HMA_rho(reward, time, 1.0)  # Weighted HMA with weight = 1.0
+        self.hma.update(reward, time, 1.0)

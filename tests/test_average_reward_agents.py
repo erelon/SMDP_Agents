@@ -1,3 +1,4 @@
+from tests.test_average_rates import CumulativeTimeRate, ExponentialMovingAverage, WeightedHarmonicRate
 import unittest
 
 from tests._loader import load_tabular_modules
@@ -78,6 +79,179 @@ class RelaxedSmartTests(unittest.TestCase):
 
 
 class HarmonicTests(unittest.TestCase):
+    def assert_agent_rho_matches_estimator(self, agent_class, sequence):
+        agent = agent_class("harmonic", [0], rho_learning_rate=0.05)
+        for step, (reward, duration) in enumerate(sequence, start=1):
+            agent.calc_new_rho(reward, duration, None, None)
+            self.assertAlmostEqual(
+                agent.rho,
+                agent.hma.value,
+                msg=f"{agent_class.__name__} differs at step {step}. HMA is {agent.rho} hma is {agent.hma.value}\n",
+            )
+        print(f"HMA of {sequence} is {agent.rho} hma is {agent.hma.value}\n")
+
+    def assert_both_harmonic_agents_match(self, sequence):
+        for agent_class in (Harmonic, WeightedHarmonic):
+            with self.subTest(agent=agent_class.__name__):
+                self.assert_agent_rho_matches_estimator(agent_class, sequence)
+
+    def test_hma_matches_weighted_harmonic_rate_for_positive_and_zero_rewards(self):
+        sequence = [
+            (1.0, 2.0), (3.0, 1.0), (0.0, 4.0), (2.0, 3.0),
+            (5.0, 2.0), (0.0, 1.0), (4.0, 5.0), (1.5, 2.5),
+            (8.0, 4.0), (2.5, 1.5), (6.0, 3.0),
+        ]
+        self.assert_both_harmonic_agents_match(sequence)
+
+    def test_hma_matches_weighted_harmonic_rate_for_negative_rewards(self):
+        sequence = [
+            (-1.0, 2.0), (-3.0, 1.0), (-2.0, 4.0), (-5.0, 3.0),
+            (-0.5, 2.0), (-4.0, 1.0), (-7.0, 5.0), (-1.5, 2.5),
+            (-8.0, 4.0), (-2.5, 1.5), (-6.0, 3.0),
+        ]
+        self.assert_both_harmonic_agents_match(sequence)
+
+    def test_hma_matches_weighted_harmonic_rate_for_mixed_sign_rewards(self):
+        sequence = [
+            (2.0, 1.0), (-1.0, 2.0), (4.0, 3.0), (-3.0, 1.0),
+            (0.0, 2.0), (1.5, 4.0), (-2.5, 2.5), (6.0, 3.0),
+            (-4.0, 1.5), (3.0, 2.0), (-0.5, 1.0),
+        ]
+        self.assert_both_harmonic_agents_match(sequence)
+
+    def test_hma_matches_weighted_harmonic_rate_for_two_step_sequence(self):
+        self.assert_both_harmonic_agents_match([(1.0, 2.0), (2.0, 1.0)])
+
+    def test_ema_rate_matches_weighted_harmonic_rate_for_two_step_sequence(self):
+        beta = 0.0001
+        agent = WeightedHarmonic("harmonic", [0], rho_learning_rate=beta)
+        sequence = [(1.0, 2.0), (2.0, 1.0)]
+        e = ExponentialMovingAverage(beta)
+        for step, (reward, duration) in enumerate(sequence, start=1):
+            agent.calc_new_rho(reward, duration, None, None)
+            e.update((reward/duration), 1.0)
+            # e.update((duration/reward), 1.0)
+            
+            # self.assertAlmostEqual(
+            #     agent.rho,
+            #     e.value,
+            #     msg=f"{agent.name} differs at step {step} rho is {agent.rho} ema is {e.value}",
+            # )
+        print(f"HMA of {sequence} is {agent.rho}   EMA is {e.value}")
+
+    def test_ema_rate_matches_harmonic_for_100_step_sequence_high_beta(self):
+        sequence = [(1.0, 2.0), (2.0, 1.0)] * 50
+
+        beta=0.999999999999
+        agent = Harmonic(
+            "harmonic", [0], rho_learning_rate=beta
+        )
+        e = ExponentialMovingAverage(beta)
+        difference_count = 0
+
+        for step, (reward, duration) in enumerate(sequence, start=1):
+            agent.calc_new_rho(reward, duration, None, None)
+            e.update(reward / duration, 1.0)
+
+            if round(agent.rho - e.value, 7) != 0:
+                difference_count += 1
+
+        print(
+            f"beta={beta}: {difference_count} differences "
+            f"across {len(sequence)} steps"
+        )
+        self.assertAlmostEqual(agent.rho,e.value,msg=f"rho is {agent.rho} ema is {e.value}")
+
+    def test_ema_rate_matches_harmonic_for_100_step_sequence_small_beta(self):
+        sequence = [(1.0, 2.0), (2.0, 1.0)] * 50
+
+        beta=0.0001
+        agent = Harmonic(
+            "harmonic", [0], rho_learning_rate=beta
+        )
+        e = ExponentialMovingAverage(beta)
+        difference_count = 0
+
+        for step, (reward, duration) in enumerate(sequence, start=1):
+            agent.calc_new_rho(reward, duration, None, None)
+            e.update(reward/duration, 1.0)
+
+            if round(agent.rho - e.value, 7) != 0:
+                difference_count += 1
+
+        print(
+            f"beta={beta}: {difference_count} differences "
+            f"across {len(sequence)} steps"
+        )
+        self.assertAlmostEqual(agent.rho,e.value,msg=f"rho is {agent.rho} ema is {e.value}")
+
+    def test_cumulative_time_rate_matches_weighted_harmonic_for_100_step_sequence_high_beta(self):
+        sequence = [(1.0, 2.0), (2.0, 1.0)] * 50
+
+        beta=0.999
+        agent = WeightedHarmonic(
+            "wharmonic", [0], rho_learning_rate=beta
+        )
+        e = CumulativeTimeRate()
+        difference_count = 0
+
+        for step, (reward, duration) in enumerate(sequence, start=1):
+            agent.calc_new_rho(reward, duration, None, None)
+            e.update(reward, duration, 1.0)
+
+            if round(agent.rho - e.value, 7) != 0:
+                difference_count += 1
+
+        print(
+            f"beta={beta}: {difference_count} differences "
+            f"across {len(sequence)} steps"
+        )
+        print(f"rho is {agent.rho} cumulative time rate is {e.value}")
+        self.assertNotAlmostEqual(agent.rho,e.value,msg=f"rho is {agent.rho} cumulative time rate is {e.value}")
+
+    def test_cumulative_time_rate_matches_weighted_harmonic_for_100_step_sequence_small_beta(self):
+        sequence = [(1.0, 2.0), (2.0, 1.0)] * 50
+
+        beta=0.00000001
+        agent = WeightedHarmonic(
+            "wharmonic", [0], rho_learning_rate=beta
+        )
+        e = CumulativeTimeRate()
+        difference_count = 0
+
+        for step, (reward, duration) in enumerate(sequence, start=1):
+            agent.calc_new_rho(reward, duration, None, None)
+            e.update(reward, duration, 1.0)
+
+            if round(agent.rho - e.value, 7) != 0:
+                difference_count += 1
+
+        print(
+            f"beta={beta}: {difference_count} differences "
+            f"across {len(sequence)} steps"
+        )
+        print(f"rho is {agent.rho} cumulative time rate is {e.value}")
+
+        self.assertAlmostEqual(agent.rho,e.value,msg=f"rho is {agent.rho} cumulative time rate is {e.value}")
+
+#    def test_ema_rate_matches_weighted_harmonic_rate_for_two_steo_sequence(self):
+#         beta = 0.8
+#         agent = WeightedHarmonic("wharmonic", [0], rho_learning_rate=beta)
+#         sequence = [(1.0, 2.0), (2.0, 1.0)]
+#         e = ExponentialMovingAverage(beta)
+#         h = WeightedHarmonicRate(beta)
+#         for step, (reward, duration) in enumerate(sequence, start=1):
+#             agent.calc_new_rho(reward, duration, None, None)
+#             e.update((reward/duration), 1.0)
+#             h.update(reward, duration, reward)
+            
+#             self.assertAlmostEqual(
+#                 agent.rho,
+#                 h.value,
+#                 msg=f"{agent.name} differs at step {step} rho is {agent.rho} ema is {h.value}",
+#             )
+#         print(f"HMA of {sequence} is {agent.rho}   EMA is {h.value}")
+
     def test_unweighted_harmonic_matches_reference_for_signed_and_zero_rewards(self):
         sequence = [(4.0, 2.0), (-2.0, 1.0), (0.0, 3.0), (1.0, 4.0)]
         expected = reference_harmonic(sequence, beta=0.3, weighted=False)

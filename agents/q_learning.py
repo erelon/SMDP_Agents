@@ -11,12 +11,12 @@ class ContinuousQLearning(Agent):
         self.exploration_rate = exploration_rate
         self.q_table = {}
         self.policy_changed = False
-        self.rho = 0
+        self.rho = 0.0
 
     def reset(self):
         super().reset()
         self.q_table = {}
-        self.rho = 0
+        self.rho = 0.0
 
     def initialize_table(self, state):
         if state not in self.q_table:
