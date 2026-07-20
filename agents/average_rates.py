@@ -160,6 +160,42 @@ class NormalizedExponentialMovingTimeRate:
 
         return self.value
 
+class ExponentialMovingRatioRate:
+    def __init__(self, beta: float):
+        beta = _require_finite("beta", beta)
+        if not 0 < beta <= 1:
+            raise ValueError("beta must be in the interval (0, 1]")
+        self.beta = beta
+        self.reward_ema = NormalizedEMA(beta)
+        self.duration_ema = NormalizedEMA(beta)
+        self.reset()
+
+    def reset(self) -> None:
+        self.reward_ema.reset()
+        self.duration_ema.reset()
+        self.value = 0.0
+
+    @property
+    def rho(self) -> float:
+        return self.value
+
+    def update(self,reward: float, time: float, weight: float = 1.0) -> float:
+        reward = _require_finite("reward", reward)
+        time = _require_duration(time)
+        weight = _require_finite("weight", weight)
+
+        reward_ema = self.reward_ema.update(reward, weight)
+        duration_ema = self.duration_ema.update(time, 1.0)
+        try:
+            self.value = reward_ema / duration_ema
+        except: 
+            if duration_ema == 0:
+                raise ZeroDivisionError("Relaxed SMART requires nonzero elapsed time") from None
+            raise
+
+        return self.value
+
+
 # Cumulative reward-rate estimators
 
 class CumulativeTimeRate:
