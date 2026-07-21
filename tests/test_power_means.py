@@ -24,6 +24,7 @@ NormalizedExponentialPowerMean = power_means.NormalizedExponentialPowerMean
 NormalizedEMA = average_rates.NormalizedEMA
 
 SEQUENCE = [0.25, 0.5, 0.75, 1.0, 1.25, 2.0, 3.0, 4.0, 6.0, 8.0, 10.0]
+WEIGHTS = [0.5, 1.0, 2.0, 0.25, 3.0, 1.5, 4.0, 0.75, 2.5, 1.25, 5.0]
 POWERS = (-1.0, 0.0, 1.0, 2.0)
 
 
@@ -31,6 +32,19 @@ def direct_power_mean(values, p):
     if p == 0:
         return math.exp(sum(math.log(value) for value in values) / len(values))
     return (sum(value**p for value in values) / len(values)) ** (1.0 / p)
+
+
+def direct_weighted_power_mean(values, weights, p):
+    total_weight = sum(weights)
+    if p == 0:
+        return math.exp(
+            sum(weight * math.log(value) for value, weight in zip(values, weights))
+            / total_weight
+        )
+    return (
+        sum(weight * value**p for value, weight in zip(values, weights))
+        / total_weight
+    ) ** (1.0 / p)
 
 
 class CumulativePowerMeanTests(unittest.TestCase):
@@ -43,6 +57,20 @@ class CumulativePowerMeanTests(unittest.TestCase):
                     values.append(value)
                     self.assertAlmostEqual(
                         mean.update(value), direct_power_mean(values, p)
+                    )
+
+    def test_matches_weighted_power_means_after_every_observation(self):
+        for p in POWERS:
+            with self.subTest(p=p):
+                mean = CumulativePowerMean(p)
+                values = []
+                weights = []
+                for value, weight in zip(SEQUENCE, WEIGHTS):
+                    values.append(value)
+                    weights.append(weight)
+                    self.assertAlmostEqual(
+                        mean.update(value, weight),
+                        direct_weighted_power_mean(values, weights, p),
                     )
 
     def test_single_item_is_identity_for_each_power(self):
@@ -82,15 +110,39 @@ class NormalizedExponentialPowerMeanTests(unittest.TestCase):
                         )
                         self.assertAlmostEqual(mean.update(value), expected)
 
+    def test_matches_independent_weighted_smoothed_calculation(self):
+        for beta in (0.0001, 0.999):
+            for p in POWERS:
+                with self.subTest(beta=beta, p=p):
+                    mean = NormalizedExponentialPowerMean(p, beta)
+                    transformed_ema = 0.0
+                    weight_ema = 0.0
+                    for value, weight in zip(SEQUENCE, WEIGHTS):
+                        transformed = math.log(value) if p == 0 else value**p
+                        transformed_ema = (
+                            (1.0 - beta) * transformed_ema
+                            + beta * transformed * weight
+                        )
+                        weight_ema = (
+                            (1.0 - beta) * weight_ema + beta * weight
+                        )
+                        normalized = transformed_ema / weight_ema
+                        expected = (
+                            math.exp(normalized)
+                            if p == 0
+                            else normalized ** (1.0 / p)
+                        )
+                        self.assertAlmostEqual(mean.update(value, weight), expected)
+
     def test_p_one_matches_existing_normalized_ema_item_by_item(self):
         for beta in (0.0001, 0.25, 0.999):
             with self.subTest(beta=beta):
                 power_mean = NormalizedExponentialPowerMean(1, beta)
                 normalized_ema = NormalizedEMA(beta)
-                for value in SEQUENCE:
+                for value, weight in zip(SEQUENCE, WEIGHTS):
                     self.assertEqual(
-                        power_mean.update(value),
-                        normalized_ema.update(value, 1.0),
+                        power_mean.update(value, weight),
+                        normalized_ema.update(value, weight),
                     )
 
     def test_single_item_is_identity_for_each_power(self):
@@ -141,6 +193,20 @@ class PowerMeanValidationTests(unittest.TestCase):
                             estimator = estimator_type(p, beta=0.3)
                         with self.assertRaises(ValueError):
                             estimator.update(value)
+
+    def test_rejects_nonpositive_and_nonfinite_weights(self):
+        invalid_weights = (0, -1, float("nan"), float("inf"), float("-inf"))
+        for estimator_type in (CumulativePowerMean, NormalizedExponentialPowerMean):
+            for weight in invalid_weights:
+                with self.subTest(
+                    estimator=estimator_type.__name__, weight=weight
+                ):
+                    if estimator_type is CumulativePowerMean:
+                        estimator = estimator_type(1)
+                    else:
+                        estimator = estimator_type(1, beta=0.3)
+                    with self.assertRaises(ValueError):
+                        estimator.update(2.0, weight)
 
 
 if __name__ == "__main__":

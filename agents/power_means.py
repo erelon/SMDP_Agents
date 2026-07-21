@@ -40,6 +40,13 @@ def _require_observation(value: float) -> float:
     return value
 
 
+def _require_weight(weight: float) -> float:
+    weight = _require_finite("weight", weight)
+    if weight <= 0:
+        raise ValueError("power means require weights greater than zero")
+    return weight
+
+
 def _transform(value: float, p: float) -> float:
     try:
         transformed = math.log(value) if p == 0 else math.pow(value, p)
@@ -79,14 +86,24 @@ class CumulativePowerMean:
 
     def reset(self) -> None:
         self.transformed_total = 0.0
+        self.total_weight = 0.0
         self.count = 0
         self.value = 0.0
 
-    def update(self, value: float) -> float:
+    def update(self, value: float, weight: float = 1.0) -> float:
         value = _require_observation(value)
-        self.transformed_total += _transform(value, self.p)
+        weight = _require_weight(weight)
+        transformed_total = (
+            self.transformed_total + weight * _transform(value, self.p)
+        )
+        total_weight = self.total_weight + weight
+        if not math.isfinite(transformed_total) or not math.isfinite(total_weight):
+            raise ValueError("weighted power-mean totals must be finite")
+
+        self.transformed_total = transformed_total
+        self.total_weight = total_weight
         self.count += 1
-        transformed_mean = self.transformed_total / self.count
+        transformed_mean = self.transformed_total / self.total_weight
         self.value = _inverse_transform(transformed_mean, self.p)
         return self.value
 
@@ -104,9 +121,10 @@ class NormalizedExponentialPowerMean:
         self.transformed_mean.reset()
         self.value = 0.0
 
-    def update(self, value: float) -> float:
+    def update(self, value: float, weight: float = 1.0) -> float:
         value = _require_observation(value)
+        weight = _require_weight(weight)
         transformed = _transform(value, self.p)
-        normalized_mean = self.transformed_mean.update(transformed, 1.0)
+        normalized_mean = self.transformed_mean.update(transformed, weight)
         self.value = _inverse_transform(normalized_mean, self.p)
         return self.value

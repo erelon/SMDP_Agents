@@ -7,7 +7,7 @@
 - Provide two public stateful estimators, with final names settled before implementation:
   - `CumulativePowerMean(p)`
   - `NormalizedExponentialPowerMean(p, beta)`
-- Give both estimators the common interface `update(value) -> float`, `reset()`, and a public `value`. Constructors validate that `p` and, where applicable, `beta` are finite; require `0 < beta <= 1`.
+- Give both estimators the common interface `update(value, weight=1.0) -> float`, `reset()`, and a public `value`. Constructors validate that `p` and, where applicable, `beta` are finite; require `0 < beta <= 1`. Updates require a finite positive weight and normalize by the accumulated or exponentially smoothed total weight.
 
 ## Mathematical contract
 
@@ -47,9 +47,10 @@ The general formula for the cumulative weighted power ratio is:
 $$
 \rho_p = \left(\frac{1}{\sum_i w_i}\cdot \sum_i w_i\cdot (r_i / t_i)^p\right)^(1/p)$ where $r_i$ is the reward given to the update (see the update() API for the WeightedHaronicRate), $t_i$ is the time, and  $w_i$ is the weight
 - Confirm $\rho_{-1} = \rho_{1} IFF $w_i = r_i$ for $p=-1$, and $w_i = t_i$ for p=1.  
-- Note Phase 1 estimators accept only one value per update and therefore do not directly accept arbitrary duration weights. Determine whether composition can satisfy all contracts without duplicating the power-mean logic or exposing Phase 1 internals.
+- Phase 1 estimators accept an optional observation weight, so rate estimators should pass `reward / duration` as the value and delegate weighting directly to the selected power mean.
 - If reuse of `power_means.py` is not straightforward and elegant for any required `p`, or if the `p=1` and `p=-1` equivalences require incompatible weighting/domain semantics, create `PROBLEMS-phase-2`. Record the conflicting equations, a minimal counterexample, options for resolving the API or objective, and a recommendation. Then stop implementation and report; do not proceed to Phases 3 or 4.
 - Create NormalizedExponentialPowerMeanRate(p,\beta) using the Cumulative version above as the basis.
+
 
 ## Proposed interface and implementation, conditional on passing the gate
 
