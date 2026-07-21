@@ -1,0 +1,2 @@
+- [ ] Make sure the original averages file supports weighted argument like the power_means file
+-
