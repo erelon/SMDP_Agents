@@ -142,9 +142,9 @@ The `time` parameter passed to `learn()` is the holding time $\tau$. Each algori
 
 $$Q(s,a) \leftarrow Q(s,a) + \alpha \left[ r + \gamma^{\tau} \max_{a'} Q(s',a') - Q(s,a) \right]$$
 
-**Average-reward R-Learning** (`ContinuousRLearning`): the reward-rate $\rho$ (reward per unit time) is subtracted proportionally to the holding time:
+**Average-reward R-Learning** (`ContinuousRLearning`): the system average reward-rate $\rho$ (reward per unit time) is subtracted proportionally to the holding time:
 
-$$Q(s,a) \leftarrow Q(s,a) + \alpha \left[ r - \rho\,\tau + \max_{a'} Q(s',a') - Q(s,a) \right]$$
+$$Q(s,a) \leftarrow Q(s,a) + \alpha \left[ r - \rho\cdot\tau + \max_{a'} Q(s',a') - Q(s,a) \right]$$
 
 **SMART / RelaxedSMART**: $\rho$ is estimated as the ratio of accumulated reward to accumulated time, making it naturally unit-consistent across variable-duration actions:
 
