@@ -81,7 +81,7 @@ class RiskSmoothedR(ContinuousRLearning):
         target = weight*(crra(step_rate, self.theta) - crra(self.rho, self.theta)) + next_q
 
         # sanity check to be moved to a test
-        if self.theta == 0:
+        if self.theta == 0 and weight==time:
             a_target = reward - self.rho * time + next_q
             if not math.isclose(a_target, target):
                 raise ValueError("sanity target does not match.")

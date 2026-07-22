@@ -131,120 +131,12 @@ $$
 
 # Phase 5 -- test risk sensitivity in SMDP
 
-The following defines a simple test for risk-sensitivity:
+The file "simple-smdp-risk-testing.md" defines a simple SMDP for risk-sensitivity testing.  We will use it to construct tests validating the algorithms.
 
-"From s
-1
-	​
+- Construct a test to verify that the risk_smoothed_r algorithms, when used with $\theta = \{0, 2, -1\}$ and with weight_parameter 1.0 select the different actions appropriately: when $\theta=0,2,-1$ and weight_parameter=1.0 they select $a_{neutral},a_{averse}, a_{seeking}$ respectively.
 
-, choose one of three actions. Each action lasts exactly
+- Construct a test verifying that given the same \beta parameter, instanciations of RiskSmoothedR with the following sets of parameters all produce the same results as RelaxedSmart on the simple SMDP defined above, as well as on longer all-positive sequences appearing in other tests.  The parameters are:
+	- theta = 0, weight_parameter = -1
+	- theta = 2, weight_parameter =  1
 
-τ=2
-
-time units and transitions to s
-2
-	​
-
-.
-
-Action	Probability	Reward R	Duration τ	Rate R/τ
-a
-seek
-	​
-
-	1/2	2	2	1
-	1/2	30	2	15
-a
-neutral
-	​
-
-	1/2	12	2	6
-	1/2	22	2	11
-a
-averse
-	​
-
-	1	16	2	8
-
-From s
-2
-	​
-
-, there is only one action:
-
-s
-2
-	​
-
-⟶s
-1
-	​
-
-,R=8,τ=1,R/τ=8.
-
-Thus every cycle lasts three time units.
-
-The structure is:
-
-s
-1
-	​
-
-⟶
-a
-seek
-	​
-
-,a
-neutral
-	​
-
-,a
-averse
-	​
-
-	​
-
-s
-2
-	​
-
-⟶s
-1
-	​
-
-.
-
-Because the s
-1
-	​
-
- transition lasts two units and each random outcome occurs with probability 1/2, each of the two possible s
-1
-	​
-
- rates contributes one expected unit of time. The fixed s
-2
-	​
-
- transition contributes one unit. Therefore, the time-weighted rate distributions used for comparison are
-
-a
-seek
-	​
-
-:(1,15,8),
-a
-neutral
-	​
-
-:(6,11,8),
-a
-averse
-	​
-
-:(8,8,8),
-
-with equal weights 1/3."
-
-- Construct a test to verify that the risk_smoothed_r algorithms, when used with $\theta = \{0, 2, -1\}$ select the different actions appropriately: when $\theta=0,2,-1$ they select $a_{neutral},a_{averse}, a_{seeking}$ respectively.
+- verify RiskSmoothedR with theta 2 and weight_parameter = 0 is the same as Harmonic

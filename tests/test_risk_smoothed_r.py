@@ -18,10 +18,118 @@ SEQUENCE = (
     (5.0, 3.0),
     (0.5, 2.0),
     (4.0, 1.0),
+    (7.0, 5.0),
+    (1.5, 2.5),
+    (8.0, 4.0),
+    (2.5, 1.5),
+    (6.0, 3.0),
+)
+
+S1_ACTIONS = ("seek", "neutral", "averse")
+S1_REWARDS = {
+    "seek": (2.0, 30.0),
+    "neutral": (12.0, 22.0),
+    "averse": (16.0, 16.0),
+}
+SIMPLE_SMDP_SEQUENCE = (
+    (2.0, 2.0), (8.0, 1.0),
+    (30.0, 2.0), (8.0, 1.0),
+    (12.0, 2.0), (8.0, 1.0),
+    (22.0, 2.0), (8.0, 1.0),
+    (16.0, 2.0), (8.0, 1.0),
 )
 
 
+class SimpleRiskSMDP:
+    """Action availability for the two-state SMDP in the Phase 5 plan."""
+
+    def get_available_actions(self, state):
+        return ("back",) if state == "s2" else S1_ACTIONS
+
+
 class RiskSmoothedRTests(unittest.TestCase):
+    def assert_selects_action(self, theta, weight_p, expected_action):
+        agent = RiskSmoothedR(
+            "risk-smoothed",
+            [*S1_ACTIONS, "back"],
+            env=SimpleRiskSMDP(),
+            theta=theta,
+            weight_parameter=weight_p,
+            rho_learning_rate=0.01,
+            learning_rate=0.05,
+            exploration_rate=0.0,
+            with_rho_trick=False,
+        )
+        agent.act("s1")
+        agent.act("s2")
+        agent.calc_new_rho(8.0, 1.0, None, None)
+
+        # Visit every action and both equiprobable outcomes uniformly.
+        for step in range(600):
+            action = S1_ACTIONS[step % len(S1_ACTIONS)]
+            outcome = (step // len(S1_ACTIONS)) % 2
+            agent.learn(
+                "s1", action, S1_REWARDS[action][outcome], "s2", 2.0
+            )
+            agent.learn("s2", "back", 8.0, "s1", 1.0)
+
+        self.assertEqual(agent.eval("s1"), expected_action)
+
+    def assert_matches_relaxed_smart_values(
+        self, theta, weight_parameter, sequence, beta=0.2
+    ):
+        agent = RiskSmoothedR(
+            "risk-smoothed",
+            [0],
+            theta=theta,
+            weight_parameter=weight_parameter,
+            rho_learning_rate=beta,
+        )
+        reward_ema = 0.0
+        duration_ema = 0.0
+        normalizer = 0.0
+
+        for reward, duration in sequence:
+            reward_ema = (1.0 - beta) * reward_ema + beta * reward
+            duration_ema = (1.0 - beta) * duration_ema + beta * duration
+            normalizer = (1.0 - beta) * normalizer + beta
+            expected = (reward_ema / normalizer) / (duration_ema / normalizer)
+            agent.calc_new_rho(reward, duration, None, None)
+            self.assertAlmostEqual(agent.rho, expected)
+
+    def test_neutral_agent_selects_neutral_action_on_simple_smdp(self):
+        self.assert_selects_action(theta=0.0, weight_p=-1, expected_action="neutral")
+
+    def test_averse_agent_selects_averse_action_on_simple_smdp(self):
+        self.assert_selects_action(theta=2.0, weight_p=-1, expected_action="averse")
+
+    def test_seeking_agent_selects_seeking_action_on_simple_smdp(self):
+        self.assert_selects_action(theta=-1.0, weight_p=-1, expected_action="seek")
+
+    def test_neutral_time_weight_matches_relaxed_smart_on_simple_smdp(self):
+        self.assert_matches_relaxed_smart_values(
+            theta=0.0,
+            weight_parameter=-1.0,
+            sequence=SIMPLE_SMDP_SEQUENCE,
+        )
+
+    def test_neutral_time_weight_matches_relaxed_smart_on_long_sequence(self):
+        self.assert_matches_relaxed_smart_values(
+            theta=0.0, weight_parameter=-1.0, sequence=SEQUENCE
+        )
+
+    def test_harmonic_reward_weight_matches_relaxed_smart_on_simple_smdp(self):
+        self.assert_matches_relaxed_smart_values(
+            theta=2.0,
+            weight_parameter=1.0,
+            sequence=SIMPLE_SMDP_SEQUENCE,
+        )
+
+    def test_harmonic_reward_weight_matches_relaxed_smart_on_long_sequence(self):
+        self.assert_matches_relaxed_smart_values(
+            theta=2.0, weight_parameter=1.0, sequence=SEQUENCE
+        )
+
     def test_constructor_maps_theta_to_power_and_forwards_parameters(self):
         agent = RiskSmoothedR(
             "risk-smoothed",

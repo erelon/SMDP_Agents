@@ -131,6 +131,11 @@ class ColoredTextTestResult(unittest.TextTestResult):
         if self.showAll:
             self._write_status(test, self._color("ERROR", BRIGHT_RED))
 
+    def addSubTest(self, test, subtest, err):
+        super().addSubTest(test, subtest, err)
+        if err is not None:
+            self._stats(test)["failed"] += 1
+
     def addUnexpectedSuccess(self, test):
         unittest.TestResult.addUnexpectedSuccess(self, test)
         self._stats(test)["failed"] += 1
