@@ -96,7 +96,7 @@ $$
 
 ## Scope and interpretation
 
-- Add only `agents/risky_reward_r.py`; do not modify files from earlier phases or any other file. The filename must include the `.py` suffix even though the requested shorthand omitted it.
+- Add only `agents/risky_reward_r.py`; do not modify files from earlier phases.  If you need more than one file, use agents/risky_reward_r1.py, agents/risky_reward_r2.py, etc.
 - Implement a `ContinuousRLearning` subclass based on the article’s CRRA certainty-equivalent proposal for positive local rates \(x=r/t\), with `p = 1 - theta`:
 
   \[
@@ -107,14 +107,19 @@ $$
   \end{cases}
   \]
 
-- Unlike Phase 3, this agent should make risk sensitivity part of the reward/TD criterion, not merely substitute a different estimator for `rho`. The initial design to validate is a time-additive utility target
+- There are two interpretations of how to implement the article's suggestion of risk-sensitive r-learning for SMDP:
+   - One interpretation is that unlike Phase 3, this agent should make risk sensitivity part of the reward/TD criterion, not merely substitute a different estimator for `rho`. The initial design to validate is a time-additive utility target
 
   \[
   t\,[u_\theta(r/t)-u_\theta(\rho)] + \max_{a'}Q(s',a'),
   \]
 
-  while maintaining the corresponding time-average utility baseline and exposing its inverse-utility certainty equivalent as `rho`. Derive this carefully against the article before coding; do not assume that inserting a power mean into the ordinary target is equivalent.
-- Keep all new helpers required for utility, inverse utility, validation, and baseline state inside `agents/risky_reward_r.py`. Reuse imports from existing modules where possible, but do not alter their APIs or source.
+  while maintaining the corresponding time-average utility baseline and exposing its inverse-utility certainty equivalent as `rho`. Derive this carefully against the article before coding; do not assume that inserting a power mean into the ordinary target is equivalent.  If this interpretation is not supported by the article, write an explanation and example into file PROBLEMS-Phase-4_intrep1.md
+
+  - A second interpretation is that it should really be about changing \rho (like in phase 3) or perhaps changing the TD definition in a different way than in the first interpretation. Derive this carefully against the article before coding; do not assume phase 3 is correct. Be inventive in how to understand the article. However, If this interpretation is not supported by the article, write an explanation and example into file PROBLEMS-Phase-4_intrep2.md
+ 
+
+- Keep all new helpers required for utility, inverse utility, validation, and baseline state inside `agents/risky_reward_tools.py`. Reuse imports from existing modules where possible, but do not alter their APIs or source.
 
 ## Domain, checks, and stop rule
 
