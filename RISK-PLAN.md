@@ -128,3 +128,123 @@ $$
 - Confirm whether the additive transformed-reward TD target and the estimator’s normalization produce a coherent average-reward SMDP algorithm for every supported `theta`. Pay particular attention to units, baseline subtraction, positivity of `rho`, initialization before the first transition, and whether policy ordering is invariant to positive rescaling of rates.
 - If the formulation is not straightforward or elegant for any requested power/risk parameter, create only `PROBLEMS-phase-4` in addition to the agent file. Explain the mathematical or architectural conflict, give a minimal example, list viable alternatives, then stop and report. Do not modify Phases 1–3 or any existing file to force compatibility.
 - Completion means the new module imports independently, its self-checks pass, `theta=0` reduces to the ordinary risk-neutral target under the documented normalization, and the implementation clearly states that `theta>0` is risk-averse and `theta<0` risk-seeking for positive rates.
+
+# Phase 5 -- test risk sensitivity in SMDP
+
+The following defines a simple test for risk-sensitivity:
+
+"From s
+1
+	​
+
+, choose one of three actions. Each action lasts exactly
+
+τ=2
+
+time units and transitions to s
+2
+	​
+
+.
+
+Action	Probability	Reward R	Duration τ	Rate R/τ
+a
+seek
+	​
+
+	1/2	2	2	1
+	1/2	30	2	15
+a
+neutral
+	​
+
+	1/2	12	2	6
+	1/2	22	2	11
+a
+averse
+	​
+
+	1	16	2	8
+
+From s
+2
+	​
+
+, there is only one action:
+
+s
+2
+	​
+
+⟶s
+1
+	​
+
+,R=8,τ=1,R/τ=8.
+
+Thus every cycle lasts three time units.
+
+The structure is:
+
+s
+1
+	​
+
+⟶
+a
+seek
+	​
+
+,a
+neutral
+	​
+
+,a
+averse
+	​
+
+	​
+
+s
+2
+	​
+
+⟶s
+1
+	​
+
+.
+
+Because the s
+1
+	​
+
+ transition lasts two units and each random outcome occurs with probability 1/2, each of the two possible s
+1
+	​
+
+ rates contributes one expected unit of time. The fixed s
+2
+	​
+
+ transition contributes one unit. Therefore, the time-weighted rate distributions used for comparison are
+
+a
+seek
+	​
+
+:(1,15,8),
+a
+neutral
+	​
+
+:(6,11,8),
+a
+averse
+	​
+
+:(8,8,8),
+
+with equal weights 1/3."
+
+- Construct a test to verify that the risk_smoothed_r algorithms, when used with $\theta = \{0, 2, -1\}$ select the different actions appropriately: when $\theta=0,2,-1$ they select $a_{neutral},a_{averse}, a_{seeking}$ respectively.

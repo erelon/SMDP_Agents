@@ -5,21 +5,23 @@ integration belongs to a later phase; the classes here only own averaging
 state and return the latest estimate from each update.
 """
 
+import importlib.util
 import math
+import pathlib
 
-
-def _require_finite(name: str, value: float) -> float:
-    value = float(value)
-    if not math.isfinite(value):
-        raise ValueError(f"{name} must be finite")
-    return value
-
-
-def _require_duration(duration: float) -> float:
-    duration = _require_finite("duration", duration)
-    if duration <= 0:
-        raise ValueError("duration must be greater than zero")
-    return duration
+try:
+    from .value_checks import require_duration, require_finite
+except ImportError:  # Support direct loading by file path.
+    _VALUE_CHECKS_PATH = pathlib.Path(__file__).with_name("value_checks.py")
+    _VALUE_CHECKS_SPEC = importlib.util.spec_from_file_location(
+        "_average_rates_value_checks", _VALUE_CHECKS_PATH
+    )
+    if _VALUE_CHECKS_SPEC is None or _VALUE_CHECKS_SPEC.loader is None:
+        raise ImportError(f"cannot load value checks from {_VALUE_CHECKS_PATH}")
+    _value_checks = importlib.util.module_from_spec(_VALUE_CHECKS_SPEC)
+    _VALUE_CHECKS_SPEC.loader.exec_module(_value_checks)
+    require_duration = _value_checks.require_duration
+    require_finite = _value_checks.require_finite
 
 # Building blocks:  EMA and normalized EMA
 
@@ -27,7 +29,7 @@ class ExponentialMovingAverage:
     """Zero-initialized EMA with a call-specific multiplicative weight."""
 
     def __init__(self, beta: float):
-        beta = _require_finite("beta", beta)
+        beta = require_finite("beta", beta)
         if not 0 < beta <= 1:
             raise ValueError("beta must be in the interval (0, 1]")
         self.beta = beta
@@ -37,8 +39,8 @@ class ExponentialMovingAverage:
         self.value = 0.0
 
     def update(self, value: float, weight: float) -> float:
-        value = _require_finite("value", value)
-        weight = _require_finite("weight", weight)
+        value = require_finite("value", value)
+        weight = require_finite("weight", weight)
         self.value = (1 - self.beta) * self.value + self.beta * value * weight
         return self.value
 
@@ -46,7 +48,7 @@ class NormalizedEMA:
     """NORMALIZED EMA with a call-specific multiplicative weight.  This eliminates the bias of 0-initialization"""
 
     def __init__(self, beta: float):
-        beta = _require_finite("beta", beta)
+        beta = require_finite("beta", beta)
         if not 0 < beta <= 1:
             raise ValueError("beta must be in the interval (0, 1]")
         self.beta = beta
@@ -60,8 +62,8 @@ class NormalizedEMA:
         self.weight.reset()
 
     def update(self, value: float, weight: float) -> float:
-        value = _require_finite("value", value)
-        weight = _require_finite("weight", weight)
+        value = require_finite("value", value)
+        weight = require_finite("weight", weight)
         self.unnorm.update(value,weight)
         self.weight.update(weight,1.0)
         self.value = self.unnorm.value / self.weight.value
@@ -71,7 +73,7 @@ class ExponentialMovingTimeRate:
     """Unnormalized exponential moving time-rate estimator."""
 
     def __init__(self, beta: float):
-        beta = _require_finite("beta", beta)
+        beta = require_finite("beta", beta)
         if not 0 < beta <= 1:
             raise ValueError("beta must be in the interval (0, 1]")
 
@@ -92,9 +94,9 @@ class ExponentialMovingTimeRate:
         time: float,
         weight: float = 1.0,
     ) -> float:
-        reward = _require_finite("reward", reward)
-        time = _require_duration(time)
-        weight = _require_finite("weight", weight)
+        reward = require_finite("reward", reward)
+        time = require_duration(time)
+        weight = require_finite("weight", weight)
 
         gain = -math.expm1(-self.lambda_ * time)
 
@@ -114,7 +116,7 @@ class NormalizedExponentialMovingTimeRate:
     """
 
     def __init__(self, beta: float):
-        beta = _require_finite("beta", beta)
+        beta = require_finite("beta", beta)
         if not 0 < beta <= 1:
             raise ValueError("beta must be in the interval (0, 1]")
 
@@ -137,9 +139,9 @@ class NormalizedExponentialMovingTimeRate:
         time: float,
         weight: float = 1.0,
     ) -> float:
-        reward = _require_finite("reward", reward)
-        time = _require_duration(time)
-        weight = _require_finite("weight", weight)
+        reward = require_finite("reward", reward)
+        time = require_duration(time)
+        weight = require_finite("weight", weight)
 
         retention = math.exp(-self.lambda_ * time)
         gain = -math.expm1(-self.lambda_ * time)
@@ -162,7 +164,7 @@ class NormalizedExponentialMovingTimeRate:
 
 class ExponentialMovingRatioRate:
     def __init__(self, beta: float):
-        beta = _require_finite("beta", beta)
+        beta = require_finite("beta", beta)
         if not 0 < beta <= 1:
             raise ValueError("beta must be in the interval (0, 1]")
         self.beta = beta
@@ -180,9 +182,9 @@ class ExponentialMovingRatioRate:
         return self.value
 
     def update(self,reward: float, time: float, weight: float = 1.0) -> float:
-        reward = _require_finite("reward", reward)
-        time = _require_duration(time)
-        weight = _require_finite("weight", weight)
+        reward = require_finite("reward", reward)
+        time = require_duration(time)
+        weight = require_finite("weight", weight)
 
         reward_ema = self.reward_ema.update(reward, weight)
         duration_ema = self.duration_ema.update(time, 1.0)
@@ -214,9 +216,9 @@ class CumulativeTimeRate:
         return self.value	# TODO: Seems wasteful. If all algorithms use rho, then use rho. Otherwise use value.
 
     def update(self, reward: float, duration: float, weight: float) -> float:
-        reward = _require_finite("reward", reward)
-        duration = _require_duration(duration)
-        weight = _require_finite("weight", weight)
+        reward = require_finite("reward", reward)
+        duration = require_duration(duration)
+        weight = require_finite("weight", weight)
         self.total_reward += reward * weight
         self.total_duration += duration
         self.value = self.total_reward / self.total_duration
@@ -233,9 +235,9 @@ class CumulativeStepRate:
         self.value = 0.0
 
     def update(self, reward: float, duration: float, weight: float) -> float:
-        reward = _require_finite("reward", reward)
-        duration = _require_duration(duration)
-        weight = _require_finite("weight", weight)
+        reward = require_finite("reward", reward)
+        duration = require_duration(duration)
+        weight = require_finite("weight", weight)
         self.total_rates += (reward/duration) * weight
         self.total_steps += 1
         self.value = self.total_rates/ self.total_steps
@@ -270,9 +272,9 @@ class WeightedHarmonicRate:
         return self.value
 
     def update(self, reward: float, duration: float, weight: float) -> float:
-        reward = _require_finite("reward", reward)
-        duration = _require_duration(duration)
-        weight = _require_finite("weight", weight)
+        reward = require_finite("reward", reward)
+        duration = require_duration(duration)
+        weight = require_finite("weight", weight)
 
         positive = float(reward > 0)
         negative = float(reward < 0)
@@ -340,9 +342,9 @@ class NormHMA:
         return self.value
 
     def update(self, reward: float, duration: float, weight: float) -> float:
-        reward = _require_finite("reward", reward)
-        duration = _require_duration(duration)
-        weight = _require_finite("weight", weight)
+        reward = require_finite("reward", reward)
+        duration = require_duration(duration)
+        weight = require_finite("weight", weight)
 
         positive = float(reward > 0)
         negative = float(reward < 0)
@@ -378,4 +380,3 @@ class NormHMA:
         #     + negative_harmonic * negative_occurrence
         # ) / occurrence_total
         return self.value
-

@@ -1,26 +1,7 @@
 """Power-mean estimators over positive local reward rates."""
 
-import math
-
 from .power_means import CumulativePowerMean, NormalizedExponentialPowerMean
-
-
-def _require_finite(name: str, value: float) -> float:
-    try:
-        value = float(value)
-    except (TypeError, ValueError) as error:
-        raise ValueError(f"{name} must be finite") from error
-    if not math.isfinite(value):
-        raise ValueError(f"{name} must be finite")
-    return value
-
-
-def _local_rate(reward: float, duration: float) -> float:
-    reward = _require_finite("reward", reward)
-    duration = _require_finite("duration", duration)
-    if duration <= 0:
-        raise ValueError("duration must be greater than zero")
-    return reward / duration
+from .value_checks import local_rate
 
 
 class CumulativePowerMeanRate:
@@ -45,7 +26,7 @@ class CumulativePowerMeanRate:
         duration: float,
         weight: float = 1.0,
     ) -> float:
-        self.value = self.mean.update(_local_rate(reward, duration), weight)
+        self.value = self.mean.update(local_rate(reward, duration), weight)
         return self.value
 
 
@@ -72,5 +53,5 @@ class NormalizedExponentialPowerMeanRate:
         duration: float,
         weight: float = 1.0,
     ) -> float:
-        self.value = self.mean.update(_local_rate(reward, duration), weight)
+        self.value = self.mean.update(local_rate(reward, duration), weight)
         return self.value

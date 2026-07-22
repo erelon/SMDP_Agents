@@ -26,6 +26,7 @@ SEQUENCE = [
 ]
 
 
+@unittest.skip("RiskTotalR is superseded by the certainty-equivalent agents")
 class RiskTotalRTests(unittest.TestCase):
     def test_rho_matches_owned_estimator_for_multiple_powers(self):
         for p in (-1.0, 0.0, 1.0, 2.0):

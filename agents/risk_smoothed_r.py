@@ -1,18 +1,11 @@
-"""Exponentially smoothed power-mean rate R-learning agent."""
+"""Exponentially smoothed Risk-Sensitive SMDP R Learning."""
+
+import math
 
 from .power_rates import NormalizedExponentialPowerMeanRate
 from .r_learning import ContinuousRLearning
-
-
-def _observation_weight(mode: str, reward: float, duration: float) -> float:
-    if mode == "unit":
-        return 1.0
-    if mode == "reward":
-        return reward
-    if mode == "duration":
-        return duration
-    raise ValueError("rate_weight must be 'unit', 'reward', or 'duration'")
-
+from .risk_ce import crra
+from .value_checks import require_finite
 
 class RiskSmoothedR(ContinuousRLearning):
     """R-learning with a normalized smoothed power mean of local rates.
@@ -23,9 +16,8 @@ class RiskSmoothedR(ContinuousRLearning):
     rates. Rewards, durations, and selected observation weights must produce
     strictly positive local rates and weights.
 
-    Unit weighting is the default because at ``p=-1`` it reproduces the
-    positive-domain Harmonic estimator. Select ``rate_weight="duration"`` at
-    ``p=1`` to reproduce RelaxedSMART.
+    With theta = 0.0 and weight_parameter = -1, we get time-weighted step rate, which is the same as RelaxedSmart
+    With theta = 2.0 and weight_parameter =  1, we get reward-weighted harmonic step rate, which is the same as RelaxedSmart
     """
 
     def __init__(
@@ -36,8 +28,8 @@ class RiskSmoothedR(ContinuousRLearning):
         exploration_rate=0.1,
         with_rho_trick=True,
         rho_learning_rate=0.3,
-        p=-1.0,
-        rate_weight="unit",
+        theta=1.0,
+        weight_parameter=0.0,
         **kwargs,
     ):
         super().__init__(
@@ -49,22 +41,62 @@ class RiskSmoothedR(ContinuousRLearning):
             rho_learning_rate,
             **kwargs,
         )
-        if rate_weight not in ("unit", "reward", "duration"):
-            raise ValueError("rate_weight must be 'unit', 'reward', or 'duration'")
-        self.p = float(p)
-        self.rate_weight = rate_weight
-        self.rate = NormalizedExponentialPowerMeanRate(
-            self.p, rho_learning_rate
-        )
+        self.theta = require_finite("theta", theta)
+        self.p = 1.0-theta
+        self.rate = NormalizedExponentialPowerMeanRate(self.p, rho_learning_rate)
+        self.weight_parameter = weight_parameter
         self.reset()
 
     def reset(self):
         super().reset()
         self.rate.reset()
 
+    def weight(self, r: float, t:float):
+        """ translate weight parameter to a balance between ratio and time.
+            parameter =  0 is weight=1.0.
+            parameter =  1 is weight = reward.
+            parameter = -1 is weight = time.
+        """
+
+        # Special cases handled for efficiency
+        if self.weight_parameter == 0:
+            return 1.0
+        if self.weight_parameter == 1:
+            return r
+        if self.weight_parameter == -1:
+            return t
+        
+        # ((r*t)**((self.weight_parameter**2)/2.0) * ((r/t)**(self.weight_parameter/2)        
+    
+        # for efficiency:  These are constants given the weight_parameter
+        reward_power = self.weight_parameter * (self.weight_parameter + 1) / 2
+        time_power = self.weight_parameter * (self.weight_parameter - 1) / 2
+        return r**reward_power * t**time_power
+
+    def set_target(self, reward, time, next_q):
+        # continuous r-learning:  (reward - self.rho * time) + next_q
+
+        step_rate = reward/time
+        weight = self.weight(reward,time)
+        target = weight*(crra(step_rate, self.theta) - crra(self.rho, self.theta)) + next_q
+
+        # sanity check to be moved to a test
+        if self.theta == 0:
+            a_target = reward - self.rho * time + next_q
+            if not math.isclose(a_target, target):
+                raise ValueError("sanity target does not match.")
+        # end of sanity check
+
+        return target
+
+
     def calc_new_rho(self, reward, time, td_target, td_error):
+
+        """ Cumulative version:
+            rho is exactly weighted power mean with power p, weight = self.weight(r_i,t_i)
+        """
         try:
-            weight = _observation_weight(self.rate_weight, reward, time)
+            weight = self.weight(reward, time)
             self.rho = self.rate.update(reward, time, weight)
         except ValueError:
             if time == 0:

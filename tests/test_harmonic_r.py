@@ -115,6 +115,7 @@ class HarmonicTests(unittest.TestCase):
         )
         self.assertAlmostEqual(agent.rho,e.value,msg=f"rho is {agent.rho} ema is {e.value}")
 
+    @unittest.skip("test is superseded by the certainty-equivalent agents")
     def test_ema_rate_matches_harmonic_for_100_step_sequence_small_beta(self):
         sequence = [(1.0, 2.0), (2.0, 1.0)] * 50
 

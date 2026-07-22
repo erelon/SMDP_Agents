@@ -2,22 +2,7 @@
 
 import math
 
-
-def require_finite(name: str, value: float) -> float:
-    try:
-        value = float(value)
-    except (TypeError, ValueError) as error:
-        raise ValueError(f"{name} must be finite") from error
-    if not math.isfinite(value):
-        raise ValueError(f"{name} must be finite")
-    return value
-
-
-def require_positive(name: str, value: float) -> float:
-    value = require_finite(name, value)
-    if value <= 0:
-        raise ValueError(f"{name} must be greater than zero")
-    return value
+from .value_checks import local_rate, require_finite, require_positive
 
 
 def power_from_theta(theta: float) -> float:
@@ -68,14 +53,6 @@ def inverse_crra_utility(utility: float, theta: float) -> float:
         except (OverflowError, ValueError) as error:
             raise ValueError("certainty-equivalent rate is not finite") from error
     return require_positive("certainty-equivalent rate", rate)
-
-
-def local_rate(reward: float, duration: float) -> float:
-    """Validate a transition and return its strictly positive local rate."""
-
-    reward = require_finite("reward", reward)
-    duration = require_positive("duration", duration)
-    return require_positive("reward / duration", reward / duration)
 
 
 def utility_differential_reward(

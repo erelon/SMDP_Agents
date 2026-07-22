@@ -10,41 +10,35 @@ import importlib.util
 import math
 import pathlib
 
+try:
+    from .average_rates import NormalizedEMA
+    from .value_checks import (
+        require_finite,
+        require_power_mean_observation,
+        require_power_mean_weight,
+    )
+except ImportError:  # Support direct loading by file path.
+    def _load_sibling(module_name: str, filename: str):
+        path = pathlib.Path(__file__).with_name(filename)
+        spec = importlib.util.spec_from_file_location(module_name, path)
+        if spec is None or spec.loader is None:
+            raise ImportError(f"cannot load helpers from {path}")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
 
-_AVERAGE_RATES_PATH = pathlib.Path(__file__).resolve().parent / "average_rates.py"
-_AVERAGE_RATES_SPEC = importlib.util.spec_from_file_location(
-    "_power_means_average_rates", _AVERAGE_RATES_PATH
-)
-if _AVERAGE_RATES_SPEC is None or _AVERAGE_RATES_SPEC.loader is None:
-    raise ImportError(f"cannot load average-rate helpers from {_AVERAGE_RATES_PATH}")
-_average_rates = importlib.util.module_from_spec(_AVERAGE_RATES_SPEC)
-_AVERAGE_RATES_SPEC.loader.exec_module(_average_rates)
-
-NormalizedEMA = _average_rates.NormalizedEMA
-
-
-def _require_finite(name: str, value: float) -> float:
-    try:
-        value = float(value)
-    except (TypeError, ValueError) as error:
-        raise ValueError(f"{name} must be finite") from error
-    if not math.isfinite(value):
-        raise ValueError(f"{name} must be finite")
-    return value
-
-
-def _require_observation(value: float) -> float:
-    value = _require_finite("value", value)
-    if value <= 0:
-        raise ValueError("power means require values greater than zero")
-    return value
-
-
-def _require_weight(weight: float) -> float:
-    weight = _require_finite("weight", weight)
-    if weight <= 0:
-        raise ValueError("power means require weights greater than zero")
-    return weight
+    _average_rates = _load_sibling(
+        "_power_means_average_rates", "average_rates.py"
+    )
+    _value_checks = _load_sibling(
+        "_power_means_value_checks", "value_checks.py"
+    )
+    NormalizedEMA = _average_rates.NormalizedEMA
+    require_finite = _value_checks.require_finite
+    require_power_mean_observation = (
+        _value_checks.require_power_mean_observation
+    )
+    require_power_mean_weight = _value_checks.require_power_mean_weight
 
 
 def _transform(value: float, p: float) -> float:
@@ -81,7 +75,7 @@ class CumulativePowerMean:
     """Power mean over all strictly positive observations seen so far."""
 
     def __init__(self, p: float):
-        self.p = _require_finite("p", p)
+        self.p = require_finite("p", p)
         self.reset()
 
     def reset(self) -> None:
@@ -91,8 +85,8 @@ class CumulativePowerMean:
         self.value = 0.0
 
     def update(self, value: float, weight: float = 1.0) -> float:
-        value = _require_observation(value)
-        weight = _require_weight(weight)
+        value = require_power_mean_observation(value)
+        weight = require_power_mean_weight(weight)
         transformed_total = (
             self.transformed_total + weight * _transform(value, self.p)
         )
@@ -112,8 +106,8 @@ class NormalizedExponentialPowerMean:
     """Normalized exponentially smoothed mean of positive observations."""
 
     def __init__(self, p: float, beta: float):
-        self.p = _require_finite("p", p)
-        self.beta = _require_finite("beta", beta)
+        self.p = require_finite("p", p)
+        self.beta = require_finite("beta", beta)
         self.transformed_mean = NormalizedEMA(self.beta)
         self.reset()
 
@@ -122,8 +116,8 @@ class NormalizedExponentialPowerMean:
         self.value = 0.0
 
     def update(self, value: float, weight: float = 1.0) -> float:
-        value = _require_observation(value)
-        weight = _require_weight(weight)
+        value = require_power_mean_observation(value)
+        weight = require_power_mean_weight(weight)
         transformed = _transform(value, self.p)
         normalized_mean = self.transformed_mean.update(transformed, weight)
         self.value = _inverse_transform(normalized_mean, self.p)

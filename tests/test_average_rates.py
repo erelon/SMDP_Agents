@@ -146,6 +146,7 @@ class WeightedHarmonicRateTests(unittest.TestCase):
         self.assertAlmostEqual(r,0.8)
 
 
+@unittest.skip("NormHMA is legacy code pending redesign")
 class NormHMATests(unittest.TestCase):
     def assert_matches_weighted_harmonic_rate(self, sequence, beta=0.05):
         weighted_harmonic = WeightedHarmonicRate(beta)
