@@ -35,7 +35,7 @@ class RelaxedSMART(ContinuousRLearning):
     def calc_new_rho(self, reward: float, time: float, td_target, td_error):
         try:
             self.rho = self.ratio_rate.update(reward, time)
-        except ValueError:
+        except ValueError as ex:
             if time == 0:
                 raise ZeroDivisionError("Relaxed SMART requires nonzero elapsed time") from None
-            raise
+            raise ex
