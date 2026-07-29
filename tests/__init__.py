@@ -1,3 +1,1 @@
-"""Baseline characterization tests for SMDP_Agents."""
-
-"""Tests for standalone SMDP averaging components."""
+"""Tests for the SMDP agents and the standalone averaging components."""

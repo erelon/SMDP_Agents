@@ -154,20 +154,23 @@ class DeepQWrapper(ContinuousQLearning):
         """
         Compute the TD target using the wrapped agent's set_target logic and
         the appropriate network (target or main) for next-state Q-values.
+
+        ``time`` is an already-resolved holding time.  learn() applies
+        holding_time() once, before this call and before storing the
+        transition, so replayed targets stay on the same clock.
         """
         net = self.target_network if self.target_network is not None else self.network
         next_q_vals = self._q_values(next_state, net)
         best_next_q = float(next_q_vals.max().item())
-        # holding_time is idempotent, so applying it here as well as in learn()
-        # keeps replayed transitions and direct callers on the same clock.
-        return self.set_target(reward, self.holding_time(time), best_next_q)
+        return self.set_target(reward, time, best_next_q)
 
     def learn(self, state, action, reward, next_state, time):
         # Skip ContinuousQLearning's tabular update while retaining the base
         # Agent bookkeeping through the super chain.
         super(ContinuousQLearning, self).learn(state, action, reward, next_state, time)
         # This learn() shadows the wrapped class's, so the discrete variants'
-        # one-step clock has to be applied here rather than inherited.
+        # one-step clock has to be applied here rather than inherited.  Exactly
+        # once: an override need not be idempotent.
         time = self.holding_time(time)
         # ── Compute TD quantities using current Q-network ──────────────────
         td_target = self._compute_td_target(state, action, reward, next_state, time)

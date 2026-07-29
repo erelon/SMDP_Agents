@@ -12,7 +12,7 @@ class OracleTests(unittest.TestCase):
         self.assertEqual(oracle.eval(8), 9)
         self.assertIsNone(oracle.learn(None, None, None, None, None))
         self.assertEqual(oracle.step_count, 1)
-        oracle.reset()  # Oracle deliberately does not call super().reset().
+        oracle.reset()  # Oracle delegates to Agent.reset, which clears the count.
         self.assertEqual(oracle.step_count, 0)
 
 

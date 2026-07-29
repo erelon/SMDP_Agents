@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 
 from agents.deep_q_wrapper import DeepQWrapper
-from agents.q_learning import QLearning
+from agents.q_learning import ContinuousQLearning, QLearning
 from agents.r_learning import RLearning
 
 
@@ -21,10 +21,33 @@ class DeepQWrapperTests(unittest.TestCase):
             network,
         )
         self.assertEqual(wrapped.eval([3.0]), 1)
-        self.assertAlmostEqual(wrapped._compute_td_target([0], 0, 1, [1], 7), 2.0)
+        # Discrete Q-learning charges one step whatever the elapsed time, so
+        # the target discounts by gamma**1: 1 + 0.5 * 2.0.
+        self.assertEqual(wrapped.holding_time(7), 1.0)
+        self.assertAlmostEqual(
+            wrapped._compute_td_target([0], 0, 1, [1], wrapped.holding_time(7)), 2.0)
         before = wrapped.network.bias.detach().clone()
         wrapped.learn([0], 0, 1, [1], 7)
         self.assertFalse(torch.equal(before, wrapped.network.bias.detach()))
+
+    def test_holding_time_is_applied_exactly_once(self):
+        # A non-idempotent clock catches double application; the discrete
+        # agents' constant 1.0 would hide it.
+        seen = []
+
+        class HalfStep(ContinuousQLearning):
+            def holding_time(self, time):
+                return time / 2
+
+            def set_target(self, reward, time, next_q):
+                seen.append(time)
+                return super().set_target(reward, time, next_q)
+
+        wrapped = DeepQWrapper(
+            HalfStep("half", [0, 1], exploration_rate=0), nn.Linear(1, 2)
+        )
+        wrapped.learn([0], 0, 1.0, [1], 4.0)
+        self.assertEqual(seen, [2.0])
 
     def test_deep_r_learning_applies_the_rho_trick_like_the_tabular_agent(self):
         def wrap(with_rho_trick):
