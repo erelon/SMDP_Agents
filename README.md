@@ -1,6 +1,16 @@
 # RL Agents
 
-A modular reinforcement learning library supporting tabular, bandit, and deep Q-learning algorithms, with first-class support for **Semi-Markov Decision Processes (SMDPs)** — environments where actions have variable durations.
+A modular reinforcement learning library supporting tabular, bandit, deep Q-learning, and PPO algorithms, with first-class support for **Semi-Markov Decision Processes (SMDPs)** — environments where actions have variable durations.
+
+---
+
+## Installation
+
+```bash
+pip install -r requirements.txt   # numpy, torch
+```
+
+`import agents` pulls in the deep agents, so **torch is required even to use the tabular ones**, and to run the test suite. The one exception is `rate_comparison.py`, a standalone CLI that loads `agents/average_rates.py` by path so it stays dependency-free.
 
 ---
 
@@ -54,12 +64,14 @@ The `time` argument to `learn()` represents the **holding time** of the action �
 action = agent.eval(state)  # no exploration, pure greedy
 ```
 
-### 4. Seeding for reproducibility
+### 4. Seeding and reset semantics
 
 ```python
 agent.set_seed(123)
 agent.reset()
 ```
+
+`reset()` restores the agent to its constructed state: it clears the Q-table and the reward-rate accumulators, and **re-seeds the RNG from `self.seed`**. Consequently an agent reset before every episode draws the *same* exploration sequence in each one. If you want exploration to keep advancing across episodes, either reset once before training rather than per-episode, or call `set_seed()` with a per-episode seed before each reset.
 
 ### 5. Deep Q-Learning wrapper
 
@@ -86,13 +98,42 @@ agent = DeepQWrapper(
 )
 ```
 
-### 6. Policy change tracking
+### 6. PPO and its average-reward variants
+
+The PPO agents are env-agnostic (torch + numpy); you provide the rollout loop. Each average-reward variant reuses a tabular agent's `calc_new_rho` through multiple inheritance, so the rate logic lives in exactly one place.
+
+```python
+from agents import RsmartPPO, RolloutBuffer
+
+agent = RsmartPPO(obs_dim, act_dim)
+buf = RolloutBuffer()
+obs = envs.reset()                                   # [B, obs_dim]
+for itr in range(n_itr):
+    buf.clear()
+    for t in range(agent.batch_T):
+        action, value, logp = agent.act(obs)
+        next_obs, reward, terminated, truncated, _ = envs.step(action.numpy())
+        buf.add(obs, action, reward, terminated, truncated, value, logp, time=tau)
+        obs = next_obs
+    stats = agent.update(buf, agent.value(obs))      # bootstrap from the final obs
+```
+
+`buf.add(..., time=)` is the per-step dwell (`1.0` for an MDP, the macro-step duration for an SMDP). Adding a variant is one line — inherit the deep core plus a tabular rate agent, and pick how a batch feeds the rate updater via `rho_reduce` (`"mean"`, `"sum"`, or `"none"` for per-transition):
+
+```python
+class WeightedHarmonicPPO(PPO, WeightedHarmonic):
+    longrun = True
+    rho_reduce = "none"      # the pos/neg split needs each reward's sign
+```
+
+### 7. Policy change tracking
 
 Agents track whether the last `learn()` call changed the greedy policy for the updated state:
 
 ```python
 changed = agent.get_policy_changed()        # bool
 last_at = agent.last_policy_changed_at      # episode index (set by the caller)
+steps   = agent.step_count                  # learn() calls since construction/reset
 ```
 
 ---
@@ -114,8 +155,34 @@ last_at = agent.last_policy_changed_at      # episode index (set by the caller)
 | `UCB` | Upper Confidence Bound bandit (discrete) | Auer et al., [*Finite-time Analysis of the Multiarmed Bandit Problem*](https://link.springer.com/article/10.1023/A:1013689704352), Machine Learning 2002 |
 | `ContinuosUCB` | UCB with time-averaged rewards (SMDP) | — |
 | `DeepQWrapper` | Neural network Q-function around any of the above | Mnih et al., [*Human-level control through deep reinforcement learning*](https://www.nature.com/articles/nature14236), Nature 2015 |
+| `PPO` | Clipped-surrogate PPO with GAE (discounted, no rate correction) | Schulman et al., [*Proximal Policy Optimization Algorithms*](https://arxiv.org/abs/1707.06347), 2017 |
+| `SmartPPO` | PPO with the SMART cumulative rate correction | Das et al. 1999 (rate) + Schulman et al. 2017 |
+| `RsmartPPO` | PPO with the Relaxed SMART smoothed rate correction (APO) | Gosavi 2004 (rate) + Schulman et al. 2017 |
+| `HarmonicPPO` | PPO with the Harmonic Moving Average rate correction | Shtossel et al. 2026 (rate) + Schulman et al. 2017 |
 | `RandomAgent` | Uniformly random baseline | — |
 | `Oracle` | Optimal-action oracle (requires environment secret) | — |
+
+### Reward-rate estimators
+
+`agents/average_rates.py` holds the averaging primitives the rate-based agents are built from. It has no dependencies beyond the standard library, so it can be imported on its own.
+
+| Class | Estimate |
+|---|---|
+| `CumulativeTimeRate` | $\sum r_i / \sum \tau_i$ — backs `SMART` |
+| `CumulativeStepRate` | mean of the per-transition rates $r_i / \tau_i$ |
+| `ExponentialMovingRatioRate` | $\mathrm{EMA}(r) / \mathrm{EMA}(\tau)$ — backs `RelaxedSMART` |
+| `WeightedHarmonicRate` | signed harmonic moving average — backs `Harmonic` / `WeightedHarmonic` |
+| `ExponentialMovingTimeRate` | rate smoothed by elapsed time rather than by step count |
+| `NormalizedExponentialMovingTimeRate` | the same, debiased for the zero initialization |
+| `ExponentialMovingAverage`, `NormalizedEMA`, `TimeDecayedEMA` | the underlying averaging blocks |
+
+Every estimator takes `update(reward, duration, weight=1.0)` and returns the new `rho`. Durations must be finite and non-negative; all but `WeightedHarmonicRate` additionally require them to be strictly positive, since they divide by the duration.
+
+To compare the estimators on a recorded run, `rate_comparison.py` writes one CSV column per estimator from a whitespace-delimited `reward duration` log:
+
+```bash
+python rate_comparison.py tests/test-data/sincoslog.data --beta 0.3
+```
 
 ---
 
@@ -146,11 +213,31 @@ $$Q(s,a) \leftarrow Q(s,a) + \alpha \left[ r + \gamma^{\tau} \max_{a'} Q(s',a') 
 
 $$Q(s,a) \leftarrow Q(s,a) + \alpha \left[ r - \rho\,\tau + \max_{a'} Q(s',a') - Q(s,a) \right]$$
 
-**SMART / RelaxedSMART**: $\rho$ is estimated as the ratio of accumulated reward to accumulated time, making it naturally unit-consistent across variable-duration actions:
+**SMART**: $\rho$ is the ratio of accumulated reward to accumulated time, making it naturally unit-consistent across variable-duration actions:
 
-$$\rho = \frac{\sum r_i}{\sum \tau_i}$$
+$$\rho = \frac{\sum_i r_i}{\sum_i \tau_i}$$
+
+**RelaxedSMART**: the same ratio, but over exponentially smoothed reward and time, so the estimate tracks a drifting rate instead of averaging the whole history:
+
+$$\rho = \frac{\mathrm{EMA}_\beta(r)}{\mathrm{EMA}_\beta(\tau)}$$
+
+**Harmonic / WeightedHarmonic**: $\rho$ is a harmonic moving average of the per-transition rates. Each sign of the reward is averaged in its own branch — a harmonic mean across a sign change is meaningless — and the branches are mixed by how often each sign occurs:
+
+$$\rho = \frac{H_+ p_+ + H_- p_-}{p_+ + p_- + p_0}, \qquad H_\pm = \frac{\mathrm{EMA}_\beta(w\,\mathbb{1}_\pm)}{\mathrm{EMA}_\beta\left(w\,\mathbb{1}_\pm \tau_i / r_i\right)}$$
+
+where $p_+, p_-, p_0$ are exponential averages of the sign indicators and the weight is $w = 1$ for `Harmonic` and $w = r_i$ for `WeightedHarmonic`. Because $\tau$ appears only in the numerator of $\tau_i / r_i$, these two accept $\tau = 0$ (an instantaneous transition contributes nothing to the branch and merely decays it); the ratio-based estimators above require $\tau > 0$.
 
 **Bandit variants** (`ContinuesMAB`, `ContinuosUCB`): action values are estimated as total reward divided by total holding time, yielding a *reward-rate* estimate per action rather than a per-step average.
+
+### Discrete-time variants
+
+`QLearning` and `RLearning` are the discrete-time counterparts of `ContinuousQLearning` and `ContinuousRLearning`: they ignore the `time` you pass and charge one unit per transition. That clamp is the `holding_time(time)` hook rather than a `learn()` override, so it survives wrappers that replace `learn` — a `QLearning` inside a `DeepQWrapper` still discounts by $\gamma^1$, not $\gamma^\tau$. Override it to define a different clock:
+
+```python
+class HalfStep(ContinuousQLearning):
+    def holding_time(self, time):
+        return time / 2
+```
 
 ### When to use SMDP agents
 
@@ -161,3 +248,40 @@ Use the `Continuous*` variants whenever:
 - You are doing hierarchical RL and the lower-level controller runs for a variable number of steps.
 
 For standard gym-style environments where every step has the same duration, pass `time=1.0` to any agent and the SMDP formulas reduce to their standard MDP equivalents.
+
+---
+
+## Running the tests
+
+```bash
+python -m tests
+```
+
+The runner in `tests/__main__.py` executes the suite in contiguous algorithm groups and colors successes green, skips and warnings yellow, and failures and errors bright red. The final summary reports the nonzero ok/warning/skip/failure counts per group alongside unittest's overall totals.
+
+Run one group by naming its test class, or one case by naming its method:
+
+```bash
+python -m tests tests.test_r_learning.RLearningTests
+python -m tests tests.test_r_learning.RLearningTests.test_rho_trick_skips_non_greedy_action
+```
+
+The same names work with plain unittest when uncolored output is needed:
+
+```bash
+python -m unittest -v tests.test_r_learning.RLearningTests
+python -m unittest discover -s tests          # full suite, standard output
+```
+
+Each `tests/test_*.py` module covers the `agents/` module it is named after, and imports it directly — the suite requires torch, so nothing is skipped or conditionally loaded.
+
+For line coverage, if `coverage.py` is installed:
+
+```bash
+coverage run --branch -m unittest discover -s tests
+coverage report -m
+```
+
+### Parity policy
+
+The suite pins current behavior, including edge cases that are quirks rather than design. A change that alters observable behavior must update the affected test **in the same commit** and state the old and new behavior in the message — a test renamed to describe a bug is how a bug becomes a feature.

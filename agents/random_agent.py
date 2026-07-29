@@ -1,5 +1,6 @@
 from .base import Agent
 
+
 class RandomAgent(Agent):
     def __init__(self, name: str, action_space=None):
         super().__init__(name, action_space)

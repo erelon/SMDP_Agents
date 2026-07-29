@@ -1,11 +1,7 @@
 import math
 import unittest
 
-from tests._loader import load_tabular_modules
-
-MODULE = load_tabular_modules()["mab-ucb"]
-UCB = MODULE.UCB
-ContinuosUCB = MODULE.ContinuosUCB
+from agents.mab_ucb import UCB, ContinuosUCB
 
 
 class UcbTests(unittest.TestCase):

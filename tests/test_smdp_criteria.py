@@ -1,34 +1,25 @@
-import importlib.util
 import pathlib
 import unittest
 
-
-AVERAGE_RATES_PATH = pathlib.Path(__file__).resolve().parents[1] / "agents" / "average_rates.py"
-AVERAGE_RATES_SPEC = importlib.util.spec_from_file_location(
-    "average_rates", AVERAGE_RATES_PATH
+from agents.average_rates import (
+    CumulativeStepRate,
+    CumulativeTimeRate,
+    ExponentialMovingRatioRate,
+    NormalizedExponentialMovingTimeRate,
+    WeightedHarmonicRate,
 )
-average_rates = importlib.util.module_from_spec(AVERAGE_RATES_SPEC)
-AVERAGE_RATES_SPEC.loader.exec_module(average_rates)
-
-CumulativeStepRate = average_rates.CumulativeStepRate
-CumulativeTimeRate = average_rates.CumulativeTimeRate
-ExponentialMovingRatioRate = average_rates.ExponentialMovingRatioRate
-NormalizedExponentialMovingTimeRate = (
-    average_rates.NormalizedExponentialMovingTimeRate
-)
-WeightedHarmonicRate = average_rates.WeightedHarmonicRate
 
 
 def print_rate_comparison_table(sequence, beta):
     class RewardWeightedHarmonicRate(WeightedHarmonicRate):
-        def update(self, reward, duration, weight):
+        def update(self, reward, duration, weight=1.0):
             return super().update(reward, duration, reward)
 
     class ReciprocalHarmonicRate(WeightedHarmonicRate):
-        def update(self, reward, duration, weight):
+        def update(self, reward, duration, weight=1.0):
             harmonic_rate = super().update(reward, duration, reward)
-            self.value = 1.0 / harmonic_rate
-            return self.value
+            self.rho = 1.0 / harmonic_rate
+            return self.rho
 
     avgs = [
         ("TimeRate", CumulativeTimeRate()),
@@ -137,12 +128,13 @@ class SMDPCriteriaTests(unittest.TestCase):
 
     def test_short_seq(self):
         sequence = [
-            (2.0, 1.0),  # rate = 10
-            (1.0, 3.0),  # rate = 10
-         ] * 100
+                       (2.0, 1.0),  # rate = 10
+                       (1.0, 3.0),  # rate = 10
+                   ] * 100
         headers, rows = print_rate_comparison_table(sequence, beta=0.01)
 
         self.assertEqual(len(headers), len(rows[0]))
+
 
 if __name__ == "__main__":
     unittest.main()

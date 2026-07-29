@@ -1,10 +1,6 @@
 import unittest
 
-from tests._loader import load_tabular_modules
-
-MODULE = load_tabular_modules()["q_learning"]
-QLearning = MODULE.QLearning
-ContinuousQLearning = MODULE.ContinuousQLearning
+from agents.q_learning import ContinuousQLearning, QLearning
 
 
 class QLearningTests(unittest.TestCase):

@@ -1,17 +1,11 @@
-import importlib.util
-import pathlib
 import unittest
 
-
-MODULE_PATH = pathlib.Path(__file__).resolve().parents[1] / "agents" / "average_rates.py"
-SPEC = importlib.util.spec_from_file_location("average_rates", MODULE_PATH)
-average_rates = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(average_rates)
-
-ExponentialMovingAverage = average_rates.ExponentialMovingAverage
-CumulativeTimeRate = average_rates.CumulativeTimeRate
-WeightedHarmonicRate = average_rates.WeightedHarmonicRate
-NormHMA = average_rates.NormHMA
+from agents.average_rates import (
+    CumulativeTimeRate,
+    ExponentialMovingAverage,
+    NormHMA,
+    WeightedHarmonicRate,
+)
 
 
 class ExponentialMovingAverageTests(unittest.TestCase):
@@ -56,8 +50,8 @@ class CumulativeTimeRateTests(unittest.TestCase):
         rate = CumulativeTimeRate()
         rate.update(3, 1, 1)
         rate.reset()
-        self.assertEqual((rate.value, rate.rho, rate.total_reward, rate.total_duration),
-                         (0.0, 0.0, 0.0, 0.0))
+        self.assertEqual((rate.rho, rate.total_reward, rate.total_duration),
+                         (0.0, 0.0, 0.0))
         for duration in (0, -1, float("inf")):
             with self.subTest(duration=duration), self.assertRaises(ValueError):
                 rate.update(1, duration, 1)
@@ -136,14 +130,14 @@ class WeightedHarmonicRateTests(unittest.TestCase):
         for reward, duration in sequence:
             h = harmonic.update(reward, duration, reward)
             w = weighted.update(reward, duration, 1.0)
-        self.assertNotAlmostEqual(h,w)
+        self.assertNotAlmostEqual(h, w)
 
     def test_harmonic_is_harmonic(self):
-        sequence = ((1,2), (2,1))
+        sequence = ((1, 2), (2, 1))
         harmonic = WeightedHarmonicRate(0.00000000001)
         for reward, duration in sequence:
-            r  = harmonic.update(reward, duration, 1.0)
-        self.assertAlmostEqual(r,0.8)
+            r = harmonic.update(reward, duration, 1.0)
+        self.assertAlmostEqual(r, 0.8)
 
 
 class NormHMATests(unittest.TestCase):

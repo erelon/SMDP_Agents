@@ -1,8 +1,6 @@
 import unittest
 
-from tests._loader import load_tabular_modules
-
-RandomAgent = load_tabular_modules()["random_agent"].RandomAgent
+from agents.random_agent import RandomAgent
 
 
 class RandomAgentTests(unittest.TestCase):

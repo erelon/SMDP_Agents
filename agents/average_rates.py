@@ -3,6 +3,10 @@
 This module is intentionally independent from the agent hierarchy.  Agent
 integration belongs to a later phase; the classes here only own averaging
 state and return the latest estimate from each update.
+
+Building blocks average an arbitrary quantity and expose it as ``value``.
+Reward-rate estimators derive from ``RewardRateEstimator``, consume
+``(reward, duration, weight)`` transitions, and expose the estimate as ``rho``.
 """
 
 import math
@@ -15,23 +19,45 @@ def _require_finite(name: str, value: float) -> float:
     return value
 
 
-def _require_duration(duration: float) -> float:
+def _require_nonnegative_duration(duration: float) -> float:
     duration = _require_finite("duration", duration)
-    if duration <= 0:
+    if duration < 0:
+        raise ValueError("duration must not be negative")
+    return duration
+
+
+def _require_duration(duration: float) -> float:
+    duration = _require_nonnegative_duration(duration)
+    if duration == 0:
         raise ValueError("duration must be greater than zero")
     return duration
 
-# Building blocks:  EMA and normalized EMA
+
+def _require_beta(beta: float) -> float:
+    beta = _require_finite("beta", beta)
+    if not 0 < beta <= 1:
+        raise ValueError("beta must be in the interval (0, 1]")
+    return beta
+
+
+def _time_decay(beta: float) -> float:
+    """Decay rate whose retention over a unit duration is ``1 - beta``.
+
+    ``log1p`` because ``1 - beta`` cancels for small beta; ``beta == 1`` means
+    no memory.
+    """
+    beta = _require_beta(beta)
+    return math.inf if beta == 1 else -math.log1p(-beta)
+
+
+# Building blocks:  EMA, normalized EMA, and time-decayed EMA
 
 class ExponentialMovingAverage:
     """Zero-initialized EMA with a call-specific multiplicative weight."""
 
     def __init__(self, beta: float):
-        beta = _require_finite("beta", beta)
-        if not 0 < beta <= 1:
-            raise ValueError("beta must be in the interval (0, 1]")
-        self.beta = beta
-        self.value = 0.0
+        self.beta = _require_beta(beta)
+        self.reset()
 
     def reset(self) -> None:
         self.value = 0.0
@@ -42,340 +68,291 @@ class ExponentialMovingAverage:
         self.value = (1 - self.beta) * self.value + self.beta * value * weight
         return self.value
 
+
 class NormalizedEMA:
-    """NORMALIZED EMA with a call-specific multiplicative weight.  This eliminates the bias of 0-initialization"""
+    """EMA divided by the EMA of its weights, removing the zero-init bias."""
 
     def __init__(self, beta: float):
-        beta = _require_finite("beta", beta)
-        if not 0 < beta <= 1:
-            raise ValueError("beta must be in the interval (0, 1]")
-        self.beta = beta
-        self.unnorm = ExponentialMovingAverage(self.beta)
-        self.weight = ExponentialMovingAverage(self.beta)
+        self.beta = _require_beta(beta)
+        self.unnormalized = ExponentialMovingAverage(self.beta)
+        self.normalizer = ExponentialMovingAverage(self.beta)
         self.reset()
 
     def reset(self) -> None:
         self.value = 0.0
-        self.unnorm.reset()
-        self.weight.reset()
+        self.unnormalized.reset()
+        self.normalizer.reset()
 
     def update(self, value: float, weight: float) -> float:
         value = _require_finite("value", value)
         weight = _require_finite("weight", weight)
-        self.unnorm.update(value,weight)
-        self.weight.update(weight,1.0)
-        self.value = self.unnorm.value / self.weight.value
-        return self.value
-
-class ExponentialMovingTimeRate:
-    """Unnormalized exponential moving time-rate estimator."""
-
-    def __init__(self, beta: float):
-        beta = _require_finite("beta", beta)
-        if not 0 < beta <= 1:
-            raise ValueError("beta must be in the interval (0, 1]")
-
-        self.beta = beta
-        self.lambda_ = -math.log(1-beta)
-        self.reset()
-
-    def reset(self) -> None:
-        self.value = 0.0
-
-    @property
-    def rho(self) -> float:
-        return self.value
-
-    def update(
-        self,
-        reward: float,
-        time: float,
-        weight: float = 1.0,
-    ) -> float:
-        reward = _require_finite("reward", reward)
-        time = _require_duration(time)
-        weight = _require_finite("weight", weight)
-
-        gain = -math.expm1(-self.lambda_ * time)
-
-        self.value += (
-            gain / time
-        ) * (
-            reward * weight - self.value * time
-        )
-
+        unnormalized = self.unnormalized.update(value, weight)
+        normalizer = self.normalizer.update(weight, 1.0)
+        self.value = unnormalized / normalizer
         return self.value
 
 
-class NormalizedExponentialMovingTimeRate:
-    """Normalized exponential moving time-rate estimator.
+class TimeDecayedEMA:
+    """Zero-initialized EMA that decays per unit of elapsed time.
 
-    Normalization removes the bias caused by zero initialization.
+    Retains ``exp(-lambda * duration)`` instead of a fixed ``1 - beta`` per
+    step, so the average depends on elapsed time rather than on how that time
+    was chopped into transitions.  ``level`` is already a rate.
     """
 
     def __init__(self, beta: float):
-        beta = _require_finite("beta", beta)
-        if not 0 < beta <= 1:
-            raise ValueError("beta must be in the interval (0, 1]")
-
-        self.beta = beta
-        self.lambda_ = -math.log(1-beta)
+        self.beta = _require_beta(beta)
+        self.lambda_ = _time_decay(self.beta)
         self.reset()
 
     def reset(self) -> None:
-        self.unnormalized_value = 0.0
-        self.normalizer = 0.0
         self.value = 0.0
 
-    @property
-    def rho(self) -> float:
+    def update(self, level: float, duration: float) -> float:
+        level = _require_finite("level", level)
+        duration = _require_duration(duration)
+        retention = math.exp(-self.lambda_ * duration)
+        gain = -math.expm1(-self.lambda_ * duration)
+        self.value = retention * self.value + gain * level
         return self.value
 
-    def update(
-        self,
-        reward: float,
-        time: float,
-        weight: float = 1.0,
-    ) -> float:
+
+# The estimator contract
+
+class RewardRateEstimator:
+    """Base class for reward-rate estimators.
+
+    Subclasses implement ``_update``, which receives a validated transition and
+    returns the new ``rho``, and extend ``reset`` when they hold further state.
+    A weight of 1.0 is the unweighted estimator, so callers state a weight only
+    to deviate from it -- as ``WeightedHarmonic`` does by passing the reward.
+    """
+
+    #: Estimators that divide by the duration need it strictly positive.  Those
+    #: that only ever multiply by it accept an instantaneous transition and set
+    #: this to True; a negative duration stays an error either way.
+    accepts_zero_duration = False
+
+    def __init__(self):
+        self.reset()
+
+    def reset(self) -> None:
+        self.rho = 0.0
+
+    def update(self, reward: float, duration: float, weight: float = 1.0) -> float:
         reward = _require_finite("reward", reward)
-        time = _require_duration(time)
+        duration = (_require_nonnegative_duration(duration)
+                    if self.accepts_zero_duration else _require_duration(duration))
         weight = _require_finite("weight", weight)
+        self.rho = self._update(reward, duration, weight)
+        return self.rho
 
-        retention = math.exp(-self.lambda_ * time)
-        gain = -math.expm1(-self.lambda_ * time)
+    def _update(self, reward: float, duration: float, weight: float) -> float:
+        raise NotImplementedError
 
-        self.unnormalized_value = (
-            retention * self.unnormalized_value
-            + gain * (reward * weight / time)
-        )
 
-        self.normalizer = (
-            retention * self.normalizer
-            + gain
-        )
+class ExponentialRateEstimator(RewardRateEstimator):
+    """Estimator parameterized by a smoothing rate ``beta``.
 
-        self.value = (
-            self.unnormalized_value / self.normalizer
-        )
+    Subclasses must construct their building blocks before delegating here,
+    because ``__init__`` resets the whole estimator.
+    """
 
-        return self.value
-
-class ExponentialMovingRatioRate:
     def __init__(self, beta: float):
-        beta = _require_finite("beta", beta)
-        if not 0 < beta <= 1:
-            raise ValueError("beta must be in the interval (0, 1]")
-        self.beta = beta
+        self.beta = _require_beta(beta)
+        super().__init__()
+
+
+# Exponential reward-rate estimators
+
+class _TimeDecayedRate(ExponentialRateEstimator):
+    """Estimator backed by a time-decayed average of the transition rate."""
+
+    def __init__(self, beta: float):
+        self.unnormalized = TimeDecayedEMA(beta)
+        super().__init__(beta)
+
+    def reset(self) -> None:
+        super().reset()
+        self.unnormalized.reset()
+
+    @property
+    def lambda_(self) -> float:
+        return self.unnormalized.lambda_
+
+    def _smoothed_rate(self, reward: float, duration: float, weight: float) -> float:
+        return self.unnormalized.update(reward * weight / duration, duration)
+
+
+class ExponentialMovingTimeRate(_TimeDecayedRate):
+    """Unnormalized exponential moving time-rate estimator."""
+
+    def _update(self, reward: float, duration: float, weight: float) -> float:
+        return self._smoothed_rate(reward, duration, weight)
+
+
+class NormalizedExponentialMovingTimeRate(_TimeDecayedRate):
+    """Time-rate estimator divided by the decayed weight, removing the zero-init bias.
+
+    Same construction as ``NormalizedEMA``, in elapsed time: the driving weight
+    is the constant 1.0, so the normalizer converges to
+    ``1 - prod(exp(-lambda * duration_i))``.
+    """
+
+    def __init__(self, beta: float):
+        self.normalizer = TimeDecayedEMA(beta)
+        super().__init__(beta)
+
+    def reset(self) -> None:
+        super().reset()
+        self.normalizer.reset()
+
+    def _update(self, reward: float, duration: float, weight: float) -> float:
+        unnormalized = self._smoothed_rate(reward, duration, weight)
+        return unnormalized / self.normalizer.update(1.0, duration)
+
+
+class ExponentialMovingRatioRate(ExponentialRateEstimator):
+    """Ratio of a smoothed reward to a smoothed duration."""
+
+    def __init__(self, beta: float):
         self.reward_ema = NormalizedEMA(beta)
         self.duration_ema = NormalizedEMA(beta)
-        self.reset()
+        super().__init__(beta)
 
     def reset(self) -> None:
+        super().reset()
         self.reward_ema.reset()
         self.duration_ema.reset()
-        self.value = 0.0
 
     @property
-    def rho(self) -> float:
-        return self.value
+    def mean_reward(self) -> float:
+        return self.reward_ema.value
 
-    def update(self,reward: float, time: float, weight: float = 1.0) -> float:
-        reward = _require_finite("reward", reward)
-        time = _require_duration(time)
-        weight = _require_finite("weight", weight)
+    @property
+    def mean_duration(self) -> float:
+        return self.duration_ema.value
 
+    def _update(self, reward: float, duration: float, weight: float) -> float:
         reward_ema = self.reward_ema.update(reward, weight)
-        duration_ema = self.duration_ema.update(time, 1.0)
-        try:
-            self.value = reward_ema / duration_ema
-        except: 
-            if duration_ema == 0:
-                raise ZeroDivisionError("Relaxed SMART requires nonzero elapsed time") from None
-            raise
-
-        return self.value
+        duration_ema = self.duration_ema.update(duration, 1.0)
+        # _require_duration keeps duration_ema != 0
+        return reward_ema / duration_ema
 
 
 # Cumulative reward-rate estimators
 
-class CumulativeTimeRate:
+class CumulativeTimeRate(RewardRateEstimator):
     """Cumulative weighted reward divided by unweighted elapsed duration."""
 
-    def __init__(self):
-        self.reset()
-
     def reset(self) -> None:
+        super().reset()
         self.total_reward = 0.0
         self.total_duration = 0.0
-        self.value = 0.0
 
-    @property
-    def rho(self) -> float:
-        return self.value	# TODO: Seems wasteful. If all algorithms use rho, then use rho. Otherwise use value.
-
-    def update(self, reward: float, duration: float, weight: float) -> float:
-        reward = _require_finite("reward", reward)
-        duration = _require_duration(duration)
-        weight = _require_finite("weight", weight)
+    def _update(self, reward: float, duration: float, weight: float) -> float:
         self.total_reward += reward * weight
         self.total_duration += duration
-        self.value = self.total_reward / self.total_duration
-        return self.value
+        return self.total_reward / self.total_duration
 
 
-class CumulativeStepRate:
-    def __init__(self):
-        self.reset()
-        
+class CumulativeStepRate(RewardRateEstimator):
+    """Mean of the weighted per-transition reward rate."""
+
     def reset(self) -> None:
+        super().reset()
         self.total_rates = 0.0
         self.total_steps = 0.0
-        self.value = 0.0
 
-    def update(self, reward: float, duration: float, weight: float) -> float:
-        reward = _require_finite("reward", reward)
-        duration = _require_duration(duration)
-        weight = _require_finite("weight", weight)
-        self.total_rates += (reward/duration) * weight
+    def _update(self, reward: float, duration: float, weight: float) -> float:
+        self.total_rates += (reward / duration) * weight
         self.total_steps += 1
-        self.value = self.total_rates/ self.total_steps
-        return self.value
+        return self.total_rates / self.total_steps
 
 
-class WeightedHarmonicRate:
-    """General signed harmonic moving-average reward-rate estimator."""
+# Harmonic reward-rate estimators
+
+class _SignedHarmonicBranch:
+    """One sign branch of the signed harmonic moving average.
+
+    ``indicator`` is 1.0 when the reward carries this branch's sign, keeping the
+    other sign out of the averages while still decaying this branch every step.
+    """
 
     def __init__(self, beta: float):
-        self.positive_reciprocal = ExponentialMovingAverage(beta)
-        self.negative_reciprocal = ExponentialMovingAverage(beta)
-        self.positive_weight = ExponentialMovingAverage(beta)
-        self.negative_weight = ExponentialMovingAverage(beta)
-        self.positive_occurrence = ExponentialMovingAverage(beta)
-        self.negative_occurrence = ExponentialMovingAverage(beta)
+        self.beta = _require_beta(beta)
+        self.reciprocal = ExponentialMovingAverage(self.beta)
+        self.weighted_occurrence = ExponentialMovingAverage(self.beta)
+        self.occurrence = ExponentialMovingAverage(self.beta)
+
+    def reset(self) -> None:
+        self.reciprocal.reset()
+        self.weighted_occurrence.reset()
+        self.occurrence.reset()
+
+    def update(self, indicator: float, reciprocal_rate: float,
+               weight: float) -> tuple[float, float]:
+        """Return this branch's harmonic rate and its occurrence share."""
+        reciprocal = self.reciprocal.update(reciprocal_rate * indicator, weight)
+        weighted = self.weighted_occurrence.update(indicator, weight)
+        occurrence = self.occurrence.update(indicator, 1.0)
+
+        harmonic = 0.0 if reciprocal == 0 else weighted / reciprocal
+        return harmonic, occurrence
+
+
+class WeightedHarmonicRate(ExponentialRateEstimator):
+    """General signed harmonic moving-average reward-rate estimator.
+
+    Each sign is averaged in its own branch -- a harmonic mean across a sign
+    change is meaningless -- and the branch rates are mixed by how often each
+    sign occurs.  Zero rewards have no rate, so they enter only as occurrences.
+
+    The duration enters as ``duration / reward``, never as a divisor, so an
+    instantaneous transition is well defined: it contributes nothing to the
+    branch's reciprocal average and only decays it.
+    """
+
+    accepts_zero_duration = True
+
+    def __init__(self, beta: float):
+        self.positive = _SignedHarmonicBranch(beta)
+        self.negative = _SignedHarmonicBranch(beta)
         self.zero_occurrence = ExponentialMovingAverage(beta)
-        self.value = 0.0
+        super().__init__(beta)
 
     def reset(self) -> None:
-        self.positive_reciprocal.reset()
-        self.negative_reciprocal.reset()
-        self.positive_weight.reset()
-        self.negative_weight.reset()
-        self.positive_occurrence.reset()
-        self.negative_occurrence.reset()
+        super().reset()
+        self.positive.reset()
+        self.negative.reset()
         self.zero_occurrence.reset()
-        self.value = 0.0
 
-    @property
-    def rho(self) -> float:
-        return self.value
-
-    def update(self, reward: float, duration: float, weight: float) -> float:
-        reward = _require_finite("reward", reward)
-        duration = _require_duration(duration)
-        weight = _require_finite("weight", weight)
-
+    def _update(self, reward: float, duration: float, weight: float) -> float:
         positive = float(reward > 0)
         negative = float(reward < 0)
         zero = float(reward == 0)
         reciprocal_rate = 0.0 if zero else duration / reward
 
-        positive_reciprocal = self.positive_reciprocal.update(
-            reciprocal_rate * positive, weight
-        )
-        positive_weight = self.positive_weight.update(positive, weight)
-        positive_occurrence = self.positive_occurrence.update(positive, 1.0)
-
-        negative_reciprocal = self.negative_reciprocal.update(
-            reciprocal_rate * negative, weight
-        )
-        negative_weight = self.negative_weight.update(negative, weight)
-        negative_occurrence = self.negative_occurrence.update(negative, 1.0)
+        positive_rate, positive_occurrence = \
+            self.positive.update(positive, reciprocal_rate, weight)
+        negative_rate, negative_occurrence = \
+            self.negative.update(negative, reciprocal_rate, weight)
         zero_occurrence = self.zero_occurrence.update(zero, 1.0)
 
-        positive_harmonic = (
-            0.0 if positive_reciprocal == 0
-            else positive_weight / positive_reciprocal
-        )
-        negative_harmonic = (
-            0.0 if negative_reciprocal == 0
-            else negative_weight / negative_reciprocal
-        )
-        occurrence_total = (
-            positive_occurrence + negative_occurrence + zero_occurrence
-        )
-        self.value = (
-            positive_harmonic * positive_occurrence
-            + negative_harmonic * negative_occurrence
-        ) / occurrence_total
-        return self.value
+        return (
+            positive_rate * positive_occurrence
+            + negative_rate * negative_occurrence
+        ) / (positive_occurrence + negative_occurrence + zero_occurrence)
 
 
+class NormHMA(WeightedHarmonicRate):
+    """Alias for :class:`WeightedHarmonicRate`; normalizing it is a no-op.
 
-
-class NormHMA:
-    """General signed harmonic moving-average reward-rate estimator."""
-
-    def __init__(self, beta: float):
-        self.positive_reciprocal = NormalizedEMA(beta)
-        self.negative_reciprocal = NormalizedEMA(beta)
-        self.positive_weight = NormalizedEMA(beta)
-        self.negative_weight = NormalizedEMA(beta)
-        self.positive_occurrence = NormalizedEMA(beta)
-        self.negative_occurrence = NormalizedEMA(beta)
-        self.zero_occurrence = NormalizedEMA(beta)
-        self.value = 0.0
-
-    def reset(self) -> None:
-        self.positive_reciprocal.reset()
-        self.negative_reciprocal.reset()
-        self.positive_weight.reset()
-        self.negative_weight.reset()
-        self.positive_occurrence.reset()
-        self.negative_occurrence.reset()
-        self.zero_occurrence.reset()
-        self.value = 0.0
-
-    @property
-    def rho(self) -> float:
-        return self.value
-
-    def update(self, reward: float, duration: float, weight: float) -> float:
-        reward = _require_finite("reward", reward)
-        duration = _require_duration(duration)
-        weight = _require_finite("weight", weight)
-
-        positive = float(reward > 0)
-        negative = float(reward < 0)
-        zero = float(reward == 0)
-        reciprocal_rate = 0.0 if zero else duration / reward
-
-        positive_reciprocal = self.positive_reciprocal.update(
-            reciprocal_rate * positive, weight
-        )
-        positive_weight = self.positive_weight.update(positive, weight)
-        positive_occurrence = self.positive_occurrence.update(positive, 1.0)
-
-        negative_reciprocal = self.negative_reciprocal.update(
-            reciprocal_rate * negative, weight
-        )
-        negative_weight = self.negative_weight.update(negative, weight)
-        negative_occurrence = self.negative_occurrence.update(negative, 1.0)
-        zero_occurrence = self.zero_occurrence.update(zero, 1.0)
-
-        positive_harmonic = (
-            0.0 if positive_reciprocal == 0
-            else positive_weight / positive_reciprocal
-        )
-        negative_harmonic = (
-            0.0 if negative_reciprocal == 0
-            else negative_weight / negative_reciprocal
-        )
-        occurrence_total = (
-            positive_occurrence + negative_occurrence + zero_occurrence
-        )
-        self.value = ( positive_harmonic + negative_harmonic+zero_occurrence )
-        #     positive_harmonic * positive_occurrence
-        #     + negative_harmonic * negative_occurrence
-        # ) / occurrence_total
-        return self.value
-
+    This used to be a copy built from ``NormalizedEMA`` instead of
+    ``ExponentialMovingAverage``, to debias the zero initialization.  There is
+    no bias to remove: the estimator only ever consumes ratios of equally
+    biased EMAs, so the normalizer ``N_n = 1 - (1 - beta)**n`` cancels in each
+    branch's harmonic mean, and the sign indicators partition every step, so the
+    raw occurrences already sum to ``N_n``.  ``NormHMATests`` confirms it
+    numerically.
+    """

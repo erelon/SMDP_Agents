@@ -1,8 +1,6 @@
 import unittest
 
-from tests._loader import load_tabular_modules
-
-SMART = load_tabular_modules()["smart_r"].SMART
+from agents.smart_r import SMART
 
 
 class SmartTests(unittest.TestCase):

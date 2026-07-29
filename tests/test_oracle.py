@@ -1,8 +1,6 @@
 import unittest
 
-from tests._loader import load_tabular_modules
-
-Oracle = load_tabular_modules()["oracle"].Oracle
+from agents.oracle import Oracle
 
 
 class OracleTests(unittest.TestCase):

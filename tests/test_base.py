@@ -1,8 +1,6 @@
 import unittest
 
-from tests._loader import load_tabular_modules
-
-Agent = load_tabular_modules()["base"].Agent
+from agents.base import Agent
 
 
 class DummyAgent(Agent):
@@ -14,9 +12,11 @@ class DummyAgent(Agent):
     def learn(self, state, action, reward, next_state, time):
         return super().learn(state, action, reward, next_state, time)
 
+
 class RestrictedEnvironment:
     def get_available_actions(self, state):
         return [1] if state == "restricted" else [0, 1]
+
 
 class AgentCoreTests(unittest.TestCase):
     def test_action_space_is_required(self):

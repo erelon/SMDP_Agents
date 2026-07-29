@@ -1,10 +1,6 @@
 import unittest
 
-from tests._loader import load_tabular_modules
-
-MODULE = load_tabular_modules()["mab-epsilon"]
-MAB = MODULE.MAB
-ContinuesMAB = MODULE.ContinuesMAB
+from agents.mab_epsilon import MAB, ContinuesMAB
 
 
 class EpsilonGreedyBanditTests(unittest.TestCase):

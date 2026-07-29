@@ -1,26 +1,12 @@
-import importlib.util
 import math
 import unittest
 
-TORCH_AVAILABLE = importlib.util.find_spec("torch") is not None
+import torch
 
-@unittest.skipUnless(TORCH_AVAILABLE, "PyTorch is not installed")
+from agents.ppo import PPO, HarmonicPPO, RolloutBuffer, RsmartPPO, SmartPPO
 
 
 class PPOTests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        global torch, nn, QLearning, RLearning, DeepQWrapper
-        global GaussianMLP, gaussian_entropy, gaussian_logp
-        global PPO, SmartPPO, RsmartPPO, HarmonicPPO, RolloutBuffer
-        import torch
-        import torch.nn as nn
-        from agents.deep_q_wrapper import DeepQWrapper
-        from agents.gaussian_mlp import GaussianMLP, gaussian_entropy, gaussian_logp
-        from agents.ppo import PPO, SmartPPO, RsmartPPO, HarmonicPPO, RolloutBuffer
-        from agents.q_learning import QLearning
-        from agents.r_learning import RLearning
-
     def test_rollout_buffer_and_ppo_gae(self):
         buffer = RolloutBuffer()
         for reward, duration in ((1.0, 2.0), (2.0, 3.0)):

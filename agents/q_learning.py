@@ -33,16 +33,25 @@ class ContinuousQLearning(Agent):
             return self.rng.choice(available_actions)
         return self.eval(state)
 
+    def holding_time(self, time):
+        """Duration an update should charge for a transition.
+
+        Continuous-time agents charge the elapsed time; discrete variants
+        override this to charge one step.  It is a hook rather than a ``learn``
+        override so that wrappers replacing ``learn`` -- DeepQWrapper -- keep it.
+        """
+        return time
+
     def set_target(self, reward, time, next_q):
         df = self.discount_factor ** time
         return reward + df * next_q
-
 
     def update_table(self, state, action, reward, time, td_target, td_error, onpolicy):
         self.q_table[state][action] += self.learning_rate * td_error
 
     def learn(self, state, action, reward, next_state, time):
         super().learn(state, action, reward, next_state, time)
+        time = self.holding_time(time)
         self.initialize_table(next_state)
         best_next_action = self.eval(next_state)
         # Sometimes, it matters to the table updates -- see r-learning on-policy updates
@@ -55,5 +64,5 @@ class ContinuousQLearning(Agent):
 
 
 class QLearning(ContinuousQLearning):
-    def learn(self, state, action, reward, next_state, time):
-        super().learn(state, action, reward, next_state, 1.0)
+    def holding_time(self, time):
+        return 1.0

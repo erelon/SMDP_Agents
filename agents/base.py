@@ -2,7 +2,8 @@ import copy
 from random import Random
 from typing import Any, Dict, List, Optional
 
-MAX_REWARDS = 0 
+MAX_REWARDS = 0
+
 
 class Agent:
     def __init__(self, name: str, action_space: Optional[List[int]] = None, seed: int = 42, env=None, **kwargs):

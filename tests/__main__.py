@@ -5,7 +5,6 @@ import sys
 import unittest
 import warnings
 
-
 GREEN = "\033[32m"
 YELLOW = "\033[33m"
 BRIGHT_RED = "\033[91m"

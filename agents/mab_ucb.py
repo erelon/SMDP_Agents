@@ -1,6 +1,7 @@
 import math
 from .base import Agent
 
+
 class UCB(Agent):
     def __init__(self, name: str, action_space=None, exploration_constant=1.0, **kwargs):
         super().__init__(name, action_space, **kwargs)
@@ -20,7 +21,9 @@ class UCB(Agent):
         if state not in self.total_steps:
             self.total_steps[state] = {action: 1 for action in self.action_space}
             self.total_reward[state] = {action: 0.000000000001 for action in self.action_space}
-        ucb_values = {action: (self.q_table[state][action] + self.exploration_constant * math.sqrt(2 * (math.log(sum(self.total_steps[state].values())) / (self.total_steps[state][action])))) for action in self.action_space}
+        ucb_values = {action: (self.q_table[state][action] + self.exploration_constant * math.sqrt(
+            2 * (math.log(sum(self.total_steps[state].values())) / (self.total_steps[state][action])))) for action in
+                      self.action_space}
         return max(ucb_values, key=ucb_values.get)
 
     def eval(self, state):
@@ -37,6 +40,7 @@ class UCB(Agent):
         self.total_reward[state][action] += reward
         self._check_convergence(state, action, self.total_reward[state][action] / self.total_steps[state][action], True)
         self.q_table[state][action] = self.total_reward[state][action] / self.total_steps[state][action]
+
 
 class ContinuosUCB(Agent):
     def __init__(self, name: str, action_space=None, exploration_constant=1.0, **kwargs):
@@ -58,7 +62,9 @@ class ContinuosUCB(Agent):
             self.total_time[state] = {action: 0.000000000001 for action in self.action_space}
             self.total_count[state] = {action: 1 for action in self.action_space}
             self.total_reward[state] = {action: 0 for action in self.action_space}
-        ucb_values = {action: (self.q_table[state][action] + self.exploration_constant * math.sqrt(2 * (math.log(sum(self.total_count[state].values())) / (self.total_count[state][action])))) for action in self.action_space}
+        ucb_values = {action: (self.q_table[state][action] + self.exploration_constant * math.sqrt(
+            2 * (math.log(sum(self.total_count[state].values())) / (self.total_count[state][action])))) for action in
+                      self.action_space}
         return max(ucb_values, key=ucb_values.get)
 
     def eval(self, state):

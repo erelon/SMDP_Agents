@@ -1,26 +1,14 @@
-import importlib.util
-import math
 import unittest
 
-TORCH_AVAILABLE = importlib.util.find_spec("torch") is not None
+import torch
+import torch.nn as nn
 
-@unittest.skipUnless(TORCH_AVAILABLE, "PyTorch is not installed")
+from agents.deep_q_wrapper import DeepQWrapper
+from agents.q_learning import QLearning
+from agents.r_learning import RLearning
 
 
 class DeepQWrapperTests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        global torch, nn, QLearning, RLearning, DeepQWrapper
-        global GaussianMLP, gaussian_entropy, gaussian_logp
-        global PPO, SmartPPO, RsmartPPO, HarmonicPPO, RolloutBuffer
-        import torch
-        import torch.nn as nn
-        from agents.deep_q_wrapper import DeepQWrapper
-        from agents.gaussian_mlp import GaussianMLP, gaussian_entropy, gaussian_logp
-        from agents.ppo import PPO, SmartPPO, RsmartPPO, HarmonicPPO, RolloutBuffer
-        from agents.q_learning import QLearning
-        from agents.r_learning import RLearning
-
     def test_deep_q_target_gradient_and_action(self):
         torch.manual_seed(1)
         network = nn.Linear(1, 2)
@@ -38,18 +26,30 @@ class DeepQWrapperTests(unittest.TestCase):
         wrapped.learn([0], 0, 1, [1], 7)
         self.assertFalse(torch.equal(before, wrapped.network.bias.detach()))
 
-    def test_deep_r_learning_updates_rho_even_for_non_greedy_action(self):
-        network = nn.Linear(1, 2)
-        with torch.no_grad():
-            network.weight.zero_()
-            network.bias.copy_(torch.tensor([0.0, 1.0]))
-        wrapped = DeepQWrapper(
-            RLearning("r", [0, 1], learning_rate=0.1, rho_learning_rate=0.5,
-                      exploration_rate=0, with_rho_trick=True),
-            network,
-        )
-        wrapped.learn([0], 0, 2.0, [1], 1)
-        self.assertNotEqual(wrapped.rho, 0.0)
+    def test_deep_r_learning_applies_the_rho_trick_like_the_tabular_agent(self):
+        def wrap(with_rho_trick):
+            network = nn.Linear(1, 2)
+            with torch.no_grad():
+                network.weight.zero_()
+                network.bias.copy_(torch.tensor([0.0, 1.0]))
+            return DeepQWrapper(
+                RLearning("r", [0, 1], learning_rate=0.1, rho_learning_rate=0.5,
+                          exploration_rate=0, with_rho_trick=with_rho_trick),
+                network,
+            )
+
+        # Action 1 is greedy under the bias [0.0, 1.0], so action 0 is off-policy.
+        gated = wrap(True)
+        gated.learn([0], 0, 2.0, [1], 1)
+        self.assertEqual(gated.rho, 0.0)
+
+        ungated = wrap(False)
+        ungated.learn([0], 0, 2.0, [1], 1)
+        self.assertNotEqual(ungated.rho, 0.0)
+
+        greedy = wrap(True)
+        greedy.learn([0], 1, 2.0, [1], 1)
+        self.assertNotEqual(greedy.rho, 0.0)
 
     def test_replay_threshold_target_sync_and_reset(self):
         network = nn.Linear(1, 1)

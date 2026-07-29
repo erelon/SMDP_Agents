@@ -8,15 +8,10 @@ class SMART(ContinuousRLearning):
         super().__init__(name, action_space, learning_rate, exploration_rate, with_rho_trick, rho_learning_rate,
                          **kwargs)
         self.rate = CumulativeTimeRate()
-        # self.step_count = 0
-        # self.total_totals = 0
-        # self.beta = rho_learning_rate
 
     def reset(self):
         super().reset()
         self.rate.reset()
-        # self.step_count = 0
-        # self.total_totals = 0
 
     def calc_new_rho(self, reward, time, td_target, td_error):
         try:

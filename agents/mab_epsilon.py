@@ -1,4 +1,3 @@
-import math
 from .base import Agent
 
 
@@ -41,6 +40,7 @@ class ContinuesMAB(Agent):
             return
         self._check_convergence(state, action, self.total_reward[state][action] / self.total_time[state][action], True)
         self.q_table[state][action] = self.total_reward[state][action] / self.total_time[state][action]
+
 
 class MAB(Agent):
     def __init__(self, name: str, action_space=None, learning_rate=0.1, exploration_rate=0.1, **kwargs):

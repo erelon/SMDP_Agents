@@ -9,7 +9,6 @@ import importlib.util
 import math
 from pathlib import Path
 
-
 # Load the dependency-free module without executing agents/__init__.py, whose
 # optional deep-RL imports require packages that this utility does not need.
 _AVERAGE_RATES_PATH = Path(__file__).resolve().parent / "agents" / "average_rates.py"
@@ -21,42 +20,11 @@ _SPEC.loader.exec_module(_average_rates)
 
 CumulativeStepRate = _average_rates.CumulativeStepRate
 CumulativeTimeRate = _average_rates.CumulativeTimeRate
-ExponentialMovingAverage = _average_rates.ExponentialMovingAverage
+ExponentialMovingRatioRate = _average_rates.ExponentialMovingRatioRate
+NormalizedExponentialMovingTimeRate = _average_rates.NormalizedExponentialMovingTimeRate
 WeightedHarmonicRate = _average_rates.WeightedHarmonicRate
 
-
 DEFAULT_BETA = 0.3
-
-
-class NormalizedEMA:
-    """Bias-corrected, zero-initialized exponential moving average."""
-
-    def __init__(self, beta: float):
-        self.numerator = ExponentialMovingAverage(beta)
-        self.normalizer = ExponentialMovingAverage(beta)
-
-    def update(self, value: float) -> float:
-        numerator = self.numerator.update(value, 1.0)
-        normalizer = self.normalizer.update(1.0, 1.0)
-        return numerator / normalizer
-
-
-class ExponentialMovingTimeRate:
-    """Bias-corrected EMA of rate, decayed in elapsed-time units."""
-
-    def __init__(self, beta: float):
-        if not 0 < beta <= 1:
-            raise ValueError("beta must be in the interval (0, 1]")
-        self.decay = -math.log1p(-beta) if beta < 1 else math.inf
-        self.numerator = 0.0
-        self.normalizer = 0.0
-
-    def update(self, reward: float, duration: float) -> float:
-        retention = 0.0 if math.isinf(self.decay) else math.exp(-self.decay * duration)
-        gain = 1.0 - retention
-        self.numerator = retention * self.numerator + gain * reward / duration
-        self.normalizer = retention * self.normalizer + gain
-        return self.numerator / self.normalizer
 
 
 def read_transitions(path: Path):
@@ -85,12 +53,11 @@ def read_transitions(path: Path):
 
 def write_comparison(input_path: Path, output_path: Path, beta: float) -> None:
     cumulative = CumulativeTimeRate()
-    exponential_time = ExponentialMovingTimeRate(beta)
+    exponential_time = NormalizedExponentialMovingTimeRate(beta)
     step_mean = CumulativeStepRate()
     weighted_harmonic = WeightedHarmonicRate(beta)
     harmonic = WeightedHarmonicRate(beta)
-    reward_ema = NormalizedEMA(beta)
-    duration_ema = NormalizedEMA(beta)
+    ratio_rate = ExponentialMovingRatioRate(beta)
 
     headings = [
         "row #",
@@ -109,7 +76,7 @@ def write_comparison(input_path: Path, output_path: Path, beta: float) -> None:
         writer = csv.writer(destination)
         writer.writerow(headings)
         for row_number, (reward, duration) in enumerate(
-            read_transitions(input_path), start=1
+                read_transitions(input_path), start=1
         ):
             writer.writerow(
                 [
@@ -117,12 +84,12 @@ def write_comparison(input_path: Path, output_path: Path, beta: float) -> None:
                     reward,
                     duration,
                     reward / duration,
-                    cumulative.update(reward, duration, 1.0),
+                    cumulative.update(reward, duration),
                     exponential_time.update(reward, duration),
-                    step_mean.update(reward, duration, 1.0),
+                    step_mean.update(reward, duration),
                     weighted_harmonic.update(reward, duration, reward),
-                    harmonic.update(reward, duration, 1.0),
-                    reward_ema.update(reward) / duration_ema.update(duration),
+                    harmonic.update(reward, duration),
+                    ratio_rate.update(reward, duration),
                 ]
             )
 

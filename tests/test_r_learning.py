@@ -1,10 +1,6 @@
 import unittest
 
-from tests._loader import load_tabular_modules
-
-MODULE = load_tabular_modules()["r_learning"]
-RLearning = MODULE.RLearning
-ContinuousRLearning = MODULE.ContinuousRLearning
+from agents.r_learning import ContinuousRLearning, RLearning
 
 
 class RLearningTests(unittest.TestCase):
