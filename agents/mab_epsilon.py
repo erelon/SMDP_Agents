@@ -16,24 +16,20 @@ class ContinuesMAB(Agent):
         self.total_reward = {}
 
     def act(self, state):
-        if state not in self.q_table:
-            self.q_table[state] = {action: 0 for action in self.action_space}
+        actions = self.tabulate(self.q_table, state)
         if self.rng.random() < self.exploration_rate:
-            return self.rng.choice(self.action_space)
-        return max(self.q_table[state], key=self.q_table[state].get)
+            return self.rng.choice(list(actions))
+        return max(actions, key=actions.get)
 
     def eval(self, state):
-        if state not in self.q_table:
-            self.q_table[state] = {action: 0 for action in self.action_space}
-        return max(self.q_table[state], key=self.q_table[state].get)
+        actions = self.tabulate(self.q_table, state)
+        return max(actions, key=actions.get)
 
     def learn(self, state, action, reward, next_state, time):
         super().learn(state, action, reward, next_state, time)
-        if state not in self.q_table:
-            self.q_table[state] = {action: 0 for action in self.action_space}
-        if state not in self.total_time:
-            self.total_time[state] = {action: 0 for action in self.action_space}
-            self.total_reward[state] = {action: 0 for action in self.action_space}
+        self.tabulate(self.q_table, state)
+        self.tabulate(self.total_time, state)
+        self.tabulate(self.total_reward, state)
         self.total_time[state][action] += time
         self.total_reward[state][action] += reward
         if self.total_time[state][action] == 0:
@@ -57,24 +53,20 @@ class MAB(Agent):
         self.total_reward = {}
 
     def act(self, state):
-        if state not in self.q_table:
-            self.q_table[state] = {action: 0 for action in self.action_space}
+        actions = self.tabulate(self.q_table, state)
         if self.rng.random() < self.exploration_rate:
-            return self.rng.choice(self.action_space)
-        return max(self.q_table[state], key=self.q_table[state].get)
+            return self.rng.choice(list(actions))
+        return max(actions, key=actions.get)
 
     def eval(self, state):
-        if state not in self.q_table:
-            self.q_table[state] = {action: 0 for action in self.action_space}
-        return max(self.q_table[state], key=self.q_table[state].get)
+        actions = self.tabulate(self.q_table, state)
+        return max(actions, key=actions.get)
 
     def learn(self, state, action, reward, next_state, time):
         super().learn(state, action, reward, next_state, time)
-        if state not in self.q_table:
-            self.q_table[state] = {action: 0 for action in self.action_space}
-        if state not in self.total_steps:
-            self.total_steps[state] = {action: 0 for action in self.action_space}
-            self.total_reward[state] = {action: 0 for action in self.action_space}
+        self.tabulate(self.q_table, state)
+        self.tabulate(self.total_steps, state)
+        self.tabulate(self.total_reward, state)
         self.total_steps[state][action] += 1
         self.total_reward[state][action] += reward
         if self.total_steps[state][action] == 0:

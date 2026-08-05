@@ -28,6 +28,23 @@ class AgentCoreTests(unittest.TestCase):
         self.assertEqual(agent.get_available_actions("restricted"), [1])
         self.assertEqual(agent.get_available_actions("other"), [0, 1])
 
+    def test_tabulate_creates_a_row_of_only_the_available_actions(self):
+        agent = DummyAgent("tab", [0, 1], env=RestrictedEnvironment())
+        table = {}
+        self.assertEqual(agent.tabulate(table, "restricted"), {1: 0.0})
+        self.assertEqual(agent.tabulate(table, "other"), {0: 0.0, 1: 0.0})
+
+    def test_tabulate_keeps_existing_values_and_extends_the_row(self):
+        agent = DummyAgent("tab", [0, 1])
+        table = {"s": {0: 5.0}}
+        row = agent.tabulate(table, "s", default=9.0)
+        self.assertEqual(row, {0: 5.0, 1: 9.0})   # 0 untouched, 1 added
+        self.assertIs(row, table["s"])
+
+    def test_tabulate_falls_back_to_the_full_action_space_without_an_env(self):
+        agent = DummyAgent("tab", [0, 1, 2])
+        self.assertEqual(agent.tabulate({}, "s", default=1.0), {0: 1.0, 1: 1.0, 2: 1.0})
+
     def test_convergence_detects_policy_change_for_add_and_assign(self):
         agent = DummyAgent("core", [0, 1])
         agent.q_table["s"] = {0: 2.0, 1: 1.0}

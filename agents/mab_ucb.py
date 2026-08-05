@@ -16,14 +16,12 @@ class UCB(Agent):
         self.total_reward = {}
 
     def act(self, state):
-        if state not in self.q_table:
-            self.q_table[state] = {action: 0.000000000001 for action in self.action_space}
-        if state not in self.total_steps:
-            self.total_steps[state] = {action: 1 for action in self.action_space}
-            self.total_reward[state] = {action: 0.000000000001 for action in self.action_space}
-        ucb_values = {action: (self.q_table[state][action] + self.exploration_constant * math.sqrt(
-            2 * (math.log(sum(self.total_steps[state].values())) / (self.total_steps[state][action])))) for action in
-                      self.action_space}
+        actions = self.tabulate(self.q_table, state, 0.000000000001)
+        self.tabulate(self.total_steps, state, 1)
+        self.tabulate(self.total_reward, state, 0.000000000001)
+        total = sum(self.total_steps[state].values())
+        ucb_values = {action: actions[action] + self.exploration_constant * math.sqrt(
+            2 * (math.log(total) / self.total_steps[state][action])) for action in actions}
         return max(ucb_values, key=ucb_values.get)
 
     def eval(self, state):
@@ -31,11 +29,9 @@ class UCB(Agent):
 
     def learn(self, state, action, reward, next_state, time):
         super().learn(state, action, reward, next_state, time)
-        if state not in self.q_table:
-            self.q_table[state] = {action: 0 for action in self.action_space}
-        if state not in self.total_steps:
-            self.total_steps[state] = {action: 0 for action in self.action_space}
-            self.total_reward[state] = {action: 0 for action in self.action_space}
+        self.tabulate(self.q_table, state)
+        self.tabulate(self.total_steps, state)
+        self.tabulate(self.total_reward, state)
         self.total_steps[state][action] += 1
         self.total_reward[state][action] += reward
         self._check_convergence(state, action, self.total_reward[state][action] / self.total_steps[state][action], True)
@@ -56,15 +52,13 @@ class ContinuosUCB(Agent):
         self.total_count = {}
 
     def act(self, state):
-        if state not in self.q_table:
-            self.q_table[state] = {action: 0.000001 for action in self.action_space}
-        if state not in self.total_time:
-            self.total_time[state] = {action: 0.000000000001 for action in self.action_space}
-            self.total_count[state] = {action: 1 for action in self.action_space}
-            self.total_reward[state] = {action: 0 for action in self.action_space}
-        ucb_values = {action: (self.q_table[state][action] + self.exploration_constant * math.sqrt(
-            2 * (math.log(sum(self.total_count[state].values())) / (self.total_count[state][action])))) for action in
-                      self.action_space}
+        actions = self.tabulate(self.q_table, state, 0.000001)
+        self.tabulate(self.total_time, state, 0.000000000001)
+        self.tabulate(self.total_count, state, 1)
+        self.tabulate(self.total_reward, state)
+        total = sum(self.total_count[state].values())
+        ucb_values = {action: actions[action] + self.exploration_constant * math.sqrt(
+            2 * (math.log(total) / self.total_count[state][action])) for action in actions}
         return max(ucb_values, key=ucb_values.get)
 
     def eval(self, state):
@@ -72,12 +66,10 @@ class ContinuosUCB(Agent):
 
     def learn(self, state, action, reward, next_state, time):
         super().learn(state, action, reward, next_state, time)
-        if state not in self.q_table:
-            self.q_table[state] = {action: 0 for action in self.action_space}
-        if state not in self.total_time:
-            self.total_time[state] = {action: 0 for action in self.action_space}
-            self.total_reward[state] = {action: 0 for action in self.action_space}
-            self.total_count[state] = {action: 1 for action in self.action_space}
+        self.tabulate(self.q_table, state)
+        self.tabulate(self.total_time, state)
+        self.tabulate(self.total_reward, state)
+        self.tabulate(self.total_count, state, 1)
         self.total_time[state][action] += time
         self.total_reward[state][action] += reward
         self._check_convergence(state, action, self.total_reward[state][action] / self.total_time[state][action], True)

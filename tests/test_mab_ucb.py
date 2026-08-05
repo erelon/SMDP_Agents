@@ -4,6 +4,11 @@ import unittest
 from agents.mab_ucb import UCB, ContinuosUCB
 
 
+class RestrictedEnvironment:
+    def get_available_actions(self, state):
+        return [1] if state == "restricted" else [0, 1]
+
+
 class UcbTests(unittest.TestCase):
     def test_ucb_initializes_pseudocounts_and_prefers_first_on_tie(self):
         agent = UCB("ucb", [0, 1], exploration_constant=1.0)
@@ -31,6 +36,23 @@ class UcbTests(unittest.TestCase):
         agent = ContinuosUCB("cucb", [0])
         with self.assertRaises(ZeroDivisionError):
             agent.learn("s", 0, 1.0, None, 0.0)
+
+    def test_ucb_scores_only_the_available_actions(self):
+        # Was: the UCB score was computed over the full action_space, so on a
+        # restricted state the argmax could be an action the environment refuses.
+        for cls, counter in ((UCB, "total_steps"), (ContinuosUCB, "total_count")):
+            with self.subTest(agent=cls.__name__):
+                agent = cls("ucb", [0, 1], env=RestrictedEnvironment())
+                self.assertEqual(agent.act("restricted"), 1)
+                self.assertEqual(sorted(agent.q_table["restricted"]), [1])
+                self.assertEqual(sorted(getattr(agent, counter)["restricted"]), [1])
+
+    def test_ucb_pseudocounts_only_cover_available_actions(self):
+        agent = UCB("ucb", [0, 1], env=RestrictedEnvironment())
+        agent.act("restricted")
+        self.assertEqual(agent.total_steps["restricted"], {1: 1})
+        agent.act("other")
+        self.assertEqual(agent.total_steps["other"], {0: 1, 1: 1})
 
 
 if __name__ == "__main__":
