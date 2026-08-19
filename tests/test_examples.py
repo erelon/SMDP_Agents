@@ -25,7 +25,9 @@ from examples.envs import (ENVS, FAMILIES, check_smdp_env,
 from examples.envs.base import EnvContractError, SMDPEnv
 from examples.envs.configs import (AVERSE, NEUTRAL, RISK_ACTION_NAMES, SEEK,
                                    feinberg_three_state, gemini_three_state,
-                                   ratio_vs_step_rate, risk_three_actions)
+                                   ratio_vs_step_rate, risk_three_actions,
+                                   self_similar_margin,
+                                   sincoslog_self_similar)
 from examples.envs.distributions import make_reward
 from examples.envs.tabular import SMDPConfig, TabularSMDPEnv, Transition
 from examples.envs.two_path import ACTION_A, ACTION_B, STATE0, TwoPathEnv
@@ -451,6 +453,59 @@ class DriftEnvTests(unittest.TestCase):
         late_a = rate(*run(build(1e-2), fixed(A), steps=2000, seed=1))
         late_b = rate(*run(build(1e-2), fixed(B), steps=2000, seed=1))
         self.assertGreater(late_b, late_a)
+
+    def test_the_self_similar_margin_is_closed_form_and_envelope_independent(self):
+        # The whole point of the rebuild: M does not decay over an episode, so the
+        # decision keeps a constant 6.7% margin instead of collapsing to a knife
+        # edge the way the legacy env's does.
+        self.assertAlmostEqual(self_similar_margin(), 1.0 / 15.0)          # +0.0667
+        self.assertAlmostEqual(self_similar_margin(a_r=60.0), -1.0 / 15.0)  # -0.0667
+        # It depends on the geometry only -- no envelope term appears in it.
+        for s in (1e-4, 1e-2, 3e-2):
+            with self.subTest(s=s):
+                env = TabularSMDPEnv(sincoslog_self_similar(s=s), name="ss")
+                self.assertEqual(sorted(env.config.states), ["s1", "s2"])
+        self.assertEqual(self_similar_margin(o_d=0.5), float("inf"))  # not the long arm
+
+    def test_a_r_alone_flips_which_arm_is_optimal(self):
+        # sincoslog_ss_paid and sincoslog_ss_short differ in a_r and nothing else,
+        # and that single number moves the optimum from the long arm to the short
+        # one. It is what bounds the harmonic family's advantage.
+        rates = {}
+        for name in ("sincoslog_ss_paid", "sincoslog_ss_short"):
+            rates[name] = {a: rate(*run(make(name), fixed(a), steps=2000, seed=1))
+                           for a in (A, B)}
+        self.assertGreater(rates["sincoslog_ss_paid"][B], rates["sincoslog_ss_paid"][A])
+        self.assertGreater(rates["sincoslog_ss_short"][A], rates["sincoslog_ss_short"][B])
+        self.assertEqual(make("sincoslog_ss_paid").config.transitions[("s1", B)][0]
+                         .constant("reward"), None)  # both arms are processes
+
+    def test_paying_the_return_leg_removes_every_zero_reward(self):
+        # The control that separates a real result from the legacy encoding
+        # artefact: with the leg paid there is no zero reward anywhere, so nothing
+        # can be attributed to how the harmonic estimators treat one.
+        for name, expect_zeros in (("sincoslog_ss", True),
+                                   ("sincoslog_ss_paid", False),
+                                   ("sincoslog_ss_short", False)):
+            with self.subTest(env=name):
+                rewards, _ = run(make(name), fixed(B), steps=600, seed=1)
+                self.assertEqual(any(r == 0.0 for r in rewards), expect_zeros)
+
+    def test_the_self_similar_envelope_advances_on_every_decision(self):
+        # Exogenous drift: both arms' rewards *and* both durations share one clock,
+        # so the two fixed policies are comparable. The legacy config leaves the
+        # durations unhooked, which is part of why its arms are not.
+        env = make("sincoslog_ss")
+        env.reset(seed=1)
+        for _ in range(40):                      # advance using arm B only
+            env.step(B if env.state == "s1" else A)
+        first_a = None
+        while first_a is None:
+            _, reward, _, _, _ = env.step(A if env.state == "s1" else A)
+            if env.state == "s2":
+                first_a = reward
+        # a_r is 40 at k=0; after ~20 shared decisions the envelope has lifted it.
+        self.assertGreater(first_a, 40.0)
 
     def test_hooked_rewards_drift_even_when_the_other_action_is_taken(self):
         # Action a's reward is a ramp indexed by *decisions*, not by a-choices, so

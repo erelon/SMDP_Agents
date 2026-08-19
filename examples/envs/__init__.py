@@ -277,6 +277,22 @@ def _build_registry() -> Dict[str, EnvSpec]:
         _tabular("sincoslog_folded", "drift", configs.sincoslog,
                  source="python_project_3_main", fold_return=True,
                  return_reward=0.0),
+        # The self-similar rebuild: both arms on one exogenous envelope, so the
+        # relative margin stays at 0.0667 instead of collapsing. s=1e-2 is the
+        # speed at which the estimators come apart; see the config docstring.
+        _tabular("sincoslog_ss", "drift", configs.sincoslog_self_similar,
+                 source="python_project_3_main", s=0.01),
+        # Two controls at the speed where the estimators come apart, s=0.03. They
+        # differ from each other in `a_r` alone, which flips the sign of the margin
+        # and so which arm is optimal -- that pair is what bounds the harmonic
+        # family's advantage to "long arm optimal" rather than "better". Both pay
+        # the s2 -> s1 leg, so neither contains a zero reward and neither can be
+        # explained by the encoding artefact that produced the legacy result.
+        _tabular("sincoslog_ss_paid", "drift", configs.sincoslog_self_similar,
+                 source="python_project_3_main", s=0.03, return_reward=20.0),
+        _tabular("sincoslog_ss_short", "drift", configs.sincoslog_self_similar,
+                 source="python_project_3_main", s=0.03, return_reward=20.0,
+                 a_r=60.0),
         _tabular("non_stationary", "drift", configs.non_stationary_unichain,
                  source="python_project_3_unattributed", episode_steps=20),
         # ripening_bait is this repository's own. One state, two self-loops, so it

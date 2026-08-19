@@ -10,7 +10,8 @@ from .harmonic_r import (CumulativeHarmonic, CumulativeWeightedHarmonic,
 from .experemental_harmonic_r import (ExperimentalCumulativeWeightedHarmonic,
                                       ExperimentalWeightedHarmonic)
 from .deep_q_wrapper import DeepQWrapper
-from .ppo import PPO, RsmartPPO, SmartPPO, HarmonicPPO, RolloutBuffer
+from .ppo import (PPO, RsmartPPO, SmartPPO, HarmonicPPO, SmoothedSmartPPO,
+                  ExperimentalWeightedHarmonicPPO, RolloutBuffer)
 from .mab_epsilon import EpsilonGreedyMAB, ContinuousEpsilonGreedyMAB
 from .mab_ucb import UCB, ContinuosUCB
 
@@ -26,5 +27,6 @@ __all__ = [
     'ExperimentalWeightedHarmonic', 'ExperimentalCumulativeWeightedHarmonic',
     'EpsilonGreedyMAB', 'ContinuousEpsilonGreedyMAB', 'UCB', 'ContinuosUCB',
     'DeepQWrapper',
-    'PPO', 'RsmartPPO', 'SmartPPO', 'HarmonicPPO', 'RolloutBuffer',
+    'PPO', 'RsmartPPO', 'SmartPPO', 'HarmonicPPO', 'SmoothedSmartPPO',
+    'ExperimentalWeightedHarmonicPPO', 'RolloutBuffer',
 ]

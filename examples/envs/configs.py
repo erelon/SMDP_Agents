@@ -889,6 +889,94 @@ def rotting_bait(build_reward: float = 20.0, build_time: float = 14.0,
     )
 
 
+def sincoslog_self_similar(
+        s: float = 0.01, *, return_reward: float = 0.0, frequency: float = 1.0,
+        dur_factor: float = 0.5, o_r: float = 200.0, amp_r: float = 20.0,
+        o_d: float = 3.0, amp_d: float = 2.8, a_r: float = 40.0,
+        a_tau: float = 0.75, tau_ret: float = 1.0,
+        log_base: float = 10.0) -> SMDPConfig:
+    """Sin/cos-log with **both** arms on one exogenous envelope.
+
+    ::
+
+        G(k) = 10^(k*s)                 H(k) = 10^(k*s*dur_factor)     k = decisions
+
+        s1 --A--> s2   r = a_r * G(k)                        tau = a_tau * H(k)
+        s1 --B--> s2   r = (amp_r*sin(k) + o_r) * G(k)       tau = (amp_d*cos(k) + o_d) * H(k)
+        s2 --A--> s1   r = return_reward                     tau = tau_ret
+
+    Ported from ``PythonProject3/sincoslog_env.py``. The legacy :func:`sincoslog`
+    pits an exploding arm against a *stationary-scale* one, which makes
+    ``tau_B >> tau_A, tau_ret`` and collapses the decision to a knife edge: an
+    agent prefers the long arm while ``rho < rho_crit = (r_B - r_A)/(tau_B -
+    tau_A)``, and as ``tau_B`` runs away ``rho_crit -> r_B/tau_B -> rho*``, so the
+    relative margin goes to zero and the benchmark measures only whether an
+    estimator is biased low.
+
+    Scaling *every* reward by ``G`` and *every* duration by ``H`` fixes that. The
+    margin is envelope-independent and therefore constant over an episode:
+
+        M = (a_tau / (o_d - a_tau)) * (1 - (a_r/a_tau) / (o_r/o_d))
+
+    which is ``0.0667`` at these defaults -- arm B is optimal, and an agent needs
+    ``rho`` below ``1.0667 * rho*`` to see it. Geometry now sets the difficulty and
+    ``s`` independently sets how many decades the estimator has to chase inside one
+    episode; in the legacy env those two were the same confounded knob.
+
+    Both reward processes are cross-hooked and both duration processes are too, so
+    the envelope advances once per decision whichever arm is pulled. That matters:
+    it makes the drift exogenous, so the two fixed policies are comparable. The
+    legacy config deliberately leaves the *durations* unhooked, which is part of
+    why its two arms are not on a common clock.
+
+    See :func:`self_similar_margin`. ``return_reward`` is the ``s2 -> s1`` leg the
+    legacy env pinned at 0; here the arm rewards dominate it as soon as the
+    envelope grows, so the ranking is invariant to it over a wide range.
+    """
+    if o_d <= a_tau:
+        raise ValueError("o_d must exceed a_tau, or arm B is not the long arm")
+    reward_b = make_reward("sin_log", amplitude=amp_r, frequency=frequency,
+                           offset=o_r, log_base=log_base, start_exp=0.0, log_scale=s)
+    reward_a = make_reward("sin_log", amplitude=0.0, frequency=frequency,
+                           offset=a_r, log_base=log_base, start_exp=0.0, log_scale=s)
+    duration_b = make_duration("cos_log", amplitude=amp_d, frequency=frequency,
+                               offset=o_d, log_base=log_base, start_exp=0.0,
+                               log_scale=s * dur_factor)
+    duration_a = make_duration("cos_log", amplitude=0.0, frequency=frequency,
+                               offset=a_tau, log_base=log_base, start_exp=0.0,
+                               log_scale=s * dur_factor)
+    # One clock for the rewards and one for the durations; each advances exactly
+    # once per decision regardless of which arm was chosen.
+    reward_a.register_hook(reward_b)
+    reward_b.register_hook(reward_a)
+    duration_a.register_hook(duration_b)
+    duration_b.register_hook(duration_a)
+
+    transitions: Table = {
+        ("s1", A): [Transition("s2", 1.0, reward_a, duration_a)],
+        ("s1", B): [Transition("s2", 1.0, reward_b, duration_b)],
+        ("s2", A): [Transition("s1", 1.0, return_reward, tau_ret)],
+    }
+    return SMDPConfig(
+        states=["s1", "s2"], actions=[A, B], transitions=transitions,
+        start_state="s1",
+        note=(f"both arms on one 10^(k*{s:g}) envelope; arm B optimal with a "
+              f"constant relative margin of "
+              f"{self_similar_margin(o_r, o_d, a_r, a_tau):.4f}"))
+
+
+def self_similar_margin(o_r: float = 200.0, o_d: float = 3.0, a_r: float = 40.0,
+                        a_tau: float = 0.75) -> float:
+    """``M = (rho_crit - rho*)/rho*`` for :func:`sincoslog_self_similar`.
+
+    Envelope-independent, so it does not decay over an episode. ``M > 0`` means arm
+    B is optimal and an agent sees that exactly while ``rho < (1 + M) * rho*``.
+    """
+    if o_d <= a_tau:
+        return math.inf
+    return (a_tau / (o_d - a_tau)) * (1.0 - (a_r / a_tau) / (o_r / o_d))
+
+
 def non_stationary_unichain(reward_growth: float = 1.5,
                             duration_growth: float = 2.0,
                             steady_reward: float = 10.0,

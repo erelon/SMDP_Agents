@@ -340,6 +340,32 @@ CORRECT: Dict[str, CorrectChoice] = {
              "does not",
         source="PythonProject3/robustness_table.py:55 (CORRECT_ACTION = 1); the "
                "overtake counts are computed by visits_to_overtake()"),
+    "sincoslog_ss": CorrectChoice(
+        state="s1", action=1, criterion=LONG_RUN_RATE, bait=None,
+        note="the self-similar rebuild: both arms ride one exogenous envelope, so "
+             "the relative margin stays at +0.0667 instead of collapsing, and arm B "
+             "(the long one) is optimal at every envelope speed. Not a trap — B "
+             "also pays 200 against A's 40 on the spot",
+        source="measured; the margin is closed-form, see self_similar_margin"),
+    "sincoslog_ss_paid": CorrectChoice(
+        state="s1", action=1, criterion=LONG_RUN_RATE, bait=None,
+        note="sincoslog_ss at s=0.03 with the s2->s1 leg paying 20, so no reward in "
+             "the environment is zero. The control that separates a real result "
+             "from the legacy encoding artefact: the harmonic family holds 100% of "
+             "the (alpha, beta) grid here, where the zero-reward explanation cannot "
+             "apply",
+        source="measured; margin +0.0667"),
+    "sincoslog_ss_short": CorrectChoice(
+        state="s1", action=0, criterion=LONG_RUN_RATE, bait=1,
+        note="the same environment with a_r raised from 40 to 60, which flips the "
+             "margin to -0.0667 and makes the *short* arm optimal. This is what "
+             "bounds the claim: a harmonic rho is biased low, which tilts "
+             "r - rho*tau toward long-duration arms, so it is free accuracy when "
+             "the long arm wins and a guaranteed miss when it does not. Measured "
+             "over the grid, Harmonic goes 100% -> 0% between this and "
+             "sincoslog_ss_paid while SMART goes 16.7% -> 100%",
+        source="measured; margin -0.0667, differing from sincoslog_ss_paid in a_r "
+               "alone"),
     "non_stationary": CorrectChoice(
         state="s1", action=1, criterion=LONG_RUN_RATE, bait=None,
         note="not a trap: the steady action pays more immediately and is also "

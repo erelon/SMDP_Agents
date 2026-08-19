@@ -133,7 +133,8 @@ class CorrectActionTableTests(unittest.TestCase):
         # a reward ordering, and this measurement cannot see it.
         self.assertEqual(sorted(correct_actions.traps()),
                          ["gemini", "hell_or_heaven", "ratio_vs_step_rate",
-                          "sincoslog", "two_path", "uneven_cycling"])
+                          "sincoslog", "sincoslog_ss_short", "two_path",
+                          "uneven_cycling"])
         # two_states_uneven's trap is at its *second* state, not the start state.
         self.assertTrue(EXTRA_PROBES["two_states_uneven"].is_trap)
 

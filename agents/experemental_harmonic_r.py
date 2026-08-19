@@ -43,6 +43,18 @@ these agents want their own ``learning_rate`` before they are judged.
 from .harmonic_r import CumulativeWeightedHarmonic, WeightedHarmonic
 
 
+def abs_rho_scaled_advantage(reward, time, rho):
+    """``(r - rho*tau) / |rho|``, or the plain residual when ``rho`` is zero.
+
+    The formula lives here alone because two places consume it: the tabular
+    ``set_target`` below, and :class:`~agents.ppo.PPO`'s ``rate_residual`` inside
+    the GAE recursion. Works elementwise on torch tensors as well as on floats,
+    since ``rho`` is always a Python float.
+    """
+    residual = reward - rho * time
+    return residual if rho == 0 else residual / abs(rho)
+
+
 class AbsRhoScaledTarget:
     """Mixin: divide the R-learning advantage by ``|rho|``.
 
@@ -64,9 +76,7 @@ class AbsRhoScaledTarget:
         the averaged rewards cancel.  The fallback is the target the agent would
         have used anyway before any rate was known.
         """
-        if self.rho == 0:
-            return super().set_target(reward, time, next_q)
-        return (reward - self.rho * time) / abs(self.rho) + next_q
+        return abs_rho_scaled_advantage(reward, time, self.rho) + next_q
 
 
 class ExperimentalWeightedHarmonic(AbsRhoScaledTarget, WeightedHarmonic):

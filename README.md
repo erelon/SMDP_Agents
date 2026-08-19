@@ -130,6 +130,8 @@ class WeightedHarmonicPPO(PPO, WeightedHarmonic):
     rho_reduce = "none"      # the pos/neg split needs each reward's sign
 ```
 
+A variant that changes the *correction* rather than the rate overrides `rate_residual`, which is where `r - \rho\tau` enters the GAE recursion. That hook matters: PPO never calls the tabular `set_target`, so overriding that instead would compile, run, and silently do nothing.
+
 ### 7. Policy change tracking
 
 Agents track whether the last `learn()` call changed the greedy policy for the updated state:
@@ -168,6 +170,8 @@ steps   = agent.step_count                  # learn() calls since construction/r
 | `SmartPPO` | PPO with the SMART cumulative rate correction | Das et al. 1999 (rate) + Schulman et al. 2017 |
 | `RsmartPPO` | PPO with the Relaxed SMART smoothed rate correction (APO) | Gosavi 2004 (rate) + Schulman et al. 2017 |
 | `HarmonicPPO` | PPO with the Harmonic Moving Average rate correction | Shtossel et al. 2026 (rate) + Schulman et al. 2017 |
+| `SmoothedSmartPPO` | PPO with the elapsed-time smoothed rate correction | — |
+| `ExperimentalWeightedHarmonicPPO` | PPO with the reward-weighted harmonic rate, residual divided by $\|\rho\|$ | — |
 | `RandomAgent` | Uniformly random baseline | — |
 | `Oracle` | Optimal-action oracle (requires environment secret) | — |
 

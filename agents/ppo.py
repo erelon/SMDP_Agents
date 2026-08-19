@@ -9,6 +9,8 @@ shared by the tabular and deep agents alike:
     RsmartPPO    (PPO, RelaxedSMART)  rho = EWMA(reward)/EWMA(time)   [APO]
     SmartPPO     (PPO, SMART)         rho = Σreward/Σtime
     HarmonicPPO  (PPO, Harmonic)      rho = harmonic mean of reward/time
+    SmoothedSmartPPO                  rho smoothed in elapsed time
+    ExperimentalWeightedHarmonicPPO   rho as WeightedHarmonic, residual / |rho|
 
 Adding a variant is one line — inherit the deep core and a tabular rho agent,
 and pick how the batch feeds the rho updater (``rho_reduce``):
@@ -42,8 +44,10 @@ from torch import optim
 
 from .base import Agent
 from .gaussian_mlp import GaussianMLP, gaussian_entropy, gaussian_logp
+from .experemental_harmonic_r import (ExperimentalWeightedHarmonic,
+                                      abs_rho_scaled_advantage)
 from .harmonic_r import Harmonic
-from .smart_r import SMART
+from .smart_r import SMART, SmoothedSMART
 from .relaxed_smart import RelaxedSMART
 
 
@@ -173,12 +177,23 @@ class PPO(Agent):
         else:  # "mean"
             self.calc_new_rho(r.mean().item(), t.mean().item(), None, None)
 
+    def rate_residual(self, reward, time):
+        """The average-reward correction inside the TD residual: ``r - rho*tau``.
+
+        This is the deep analogue of the tabular ``set_target``, and the *only*
+        place ``rho`` enters the objective. A variant that scales the correction
+        must override here — PPO never calls ``set_target``, so overriding that
+        instead would silently do nothing.
+        """
+        return reward - self.rho * time
+
     # --- update -------------------------------------------------------------
     def _gae(self, reward, value, nd, bootstrap_value, time):
         adv = torch.zeros_like(reward)
         nxt, gae = bootstrap_value, 0.0
         for t in reversed(range(reward.shape[0])):
-            delta = reward[t] - self.rho * time[t] + self.discount * nxt * nd[t] - value[t]
+            delta = (self.rate_residual(reward[t], time[t])
+                     + self.discount * nxt * nd[t] - value[t])
             gae = delta + self.discount * self.gae_lambda * nd[t] * gae
             adv[t] = gae
             nxt = value[t]
@@ -243,3 +258,37 @@ class HarmonicPPO(PPO, Harmonic):
     """Harmonic-mean rho over the positive/negative reward streams."""
     longrun = True
     rho_reduce = "none"  # per-transition: the pos/neg split needs each reward
+
+
+class SmoothedSmartPPO(PPO, SmoothedSMART):
+    """SmoothedSMART: rho smoothed in *elapsed time* rather than per transition.
+
+    ``rho_reduce="none"`` because the estimator's whole point is that it decays by
+    ``exp(-lambda*tau)`` per transition. Aggregating with ``"sum"`` is tempting and
+    nearly right — by segmentation invariance, one update with ``(sum r, sum tau)``
+    is *exactly* a batch of sub-steps covering the same time at the same rate — but
+    only when the rate is constant across the batch, which is not something a
+    rollout guarantees. Per-transition is the faithful reduction.
+    """
+    longrun = True
+    rho_reduce = "none"
+
+
+class ExperimentalWeightedHarmonicPPO(PPO, ExperimentalWeightedHarmonic):
+    """``WeightedHarmonic``'s rho with the TD correction divided by ``|rho|``.
+
+    The deep counterpart of :class:`~agents.experemental_harmonic_r.\
+ExperimentalWeightedHarmonic`. Still experimental — see that module for what the
+    scaling does and does not buy.
+    """
+    longrun = True
+    rho_reduce = "none"  # weight = reward, so the pos/neg split needs each reward
+
+    def rate_residual(self, reward, time):
+        """``(r - rho*tau) / |rho|``, the same formula the tabular agent applies.
+
+        Spelled out rather than inherited: ``PPO`` precedes ``AbsRhoScaledTarget``
+        in this class's MRO, so the mixin's ``set_target`` is never consulted here
+        and the base ``rate_residual`` would otherwise win.
+        """
+        return abs_rho_scaled_advantage(reward, time, self.rho)
