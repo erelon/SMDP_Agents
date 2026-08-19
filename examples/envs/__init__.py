@@ -15,7 +15,8 @@ Environments are grouped by *family*, which is what the report aggregates over:
 
 ``criterion``
     Small graphs where the candidate definitions of average reward per unit time
-    disagree; the docstrings state the competing values.
+    disagree, or where the estimators of one definition do; the docstrings state
+    the competing values.
 ``risk``
     Same mean rate, different spread.
 ``horizon``
@@ -236,6 +237,18 @@ def _build_registry() -> Dict[str, EnvSpec]:
         # to (7.5 for a time-average, 6.667 for a ratio of expectations).
         _tabular("feinberg", "criterion", configs.feinberg_three_state,
                  source="python_project_3_unattributed", episode_steps=50),
+        # high_time_variance is this repository's own, built from the worked
+        # example behind `SmoothedSMART` (see the README), so it has no source
+        # protocol at all and takes the `none` one: a step budget
+        # chosen here, and the agents' library-default hyperparameters. The
+        # defaults matter for once — the estimators it separates only part company
+        # at a fixed gain, and beta=0.3 is the default the rate agents carry.
+        _tabular("high_time_variance", "criterion", configs.high_time_variance,
+                 source="none"),
+        # harmonic_criterion isolates the third averaging, 1/E[tau/r]; also
+        # this repo's own, so it takes the `none` protocol.
+        _tabular("harmonic_criterion", "criterion", configs.harmonic_criterion,
+                 source="none"),
         # --- risk: from the risk branch's test fixture, not a benchmark ---
         _tabular("risk", "risk", configs.risk_three_actions,
                  source="python_project_3_unattributed"),
@@ -258,8 +271,22 @@ def _build_registry() -> Dict[str, EnvSpec]:
         # non_stationary was last live at 100 episodes x 20 steps — short because
         # its reward and duration compound per visit. The 20-step episode, not the
         # config's own `ramp_visits` guard, is what bounds the clock here.
+        # sincoslog with the empty s2 -> s1 leg folded away: same physical process,
+        # no zero-reward transitions, and the bait's strength untouched. The clean
+        # control for whether the harmonic family's advantage was the encoding.
+        _tabular("sincoslog_folded", "drift", configs.sincoslog,
+                 source="python_project_3_main", fold_return=True,
+                 return_reward=0.0),
         _tabular("non_stationary", "drift", configs.non_stationary_unichain,
                  source="python_project_3_unattributed", episode_steps=20),
+        # ripening_bait is this repository's own. One state, two self-loops, so it
+        # has no episode structure to speak of and runs as one long trajectory:
+        # the bait's cycle *is* the horizon, and resetting would restart the drift.
+        _tabular("ripening_bait", "drift", configs.ripening_bait, source="none",
+                 episode_steps=None),
+        # rotting_bait is the 10x-rate-dispersion companion; see its docstring.
+        _tabular("rotting_bait", "drift", configs.rotting_bait, source="none",
+                 episode_steps=None),
         # --- horizon, episodic. A repo-local fixture with no benchmark source. ---
         EnvSpec(name="two_path", family="horizon",
                 build=lambda **kw: TwoPathEnv(**kw),

@@ -18,6 +18,8 @@ Three kinds of check:
 import statistics
 import unittest
 
+from agents.average_rates import (CumulativeTimeRate, ExponentialMovingRatioRate,
+                                  NormalizedExponentialMovingTimeRate)
 from examples.envs import (ENVS, FAMILIES, check_smdp_env,
                            heuristic_policy, make)
 from examples.envs.base import EnvContractError, SMDPEnv
@@ -289,6 +291,94 @@ class CriterionEnvTests(unittest.TestCase):
         self.assertAlmostEqual(per_step, 50.0005, delta=2.0)
         self.assertLess(pooled, 1.0)        # ratio of expectations prefers b
         self.assertGreater(per_step, 1.0)   # mean of rates prefers a
+
+    def test_the_burst_option_is_worth_20_over_11_and_the_steady_action_1(self):
+        rewards, taus = run(make("high_time_variance"), fixed(A), steps=1_100, seed=0)
+        self.assertAlmostEqual(rate(rewards, taus), 20 / 11, places=9)
+        self.assertEqual(len(set(taus)), 2)          # one slow step, ten fast ones
+        self.assertAlmostEqual(max(taus) / min(taus), 100.0)
+        steady_rewards, steady_taus = run(make("high_time_variance"), fixed(B),
+                                          steps=100, seed=0)
+        self.assertAlmostEqual(rate(steady_rewards, steady_taus), 1.0)
+        self.assertEqual(set(steady_taus), {1.0})    # no holding-time variance
+
+    def test_half_the_cycles_time_is_one_eleventh_of_its_transitions(self):
+        # This is the whole environment: the split into transitions carries no
+        # information about where the time goes, so an estimator that forgets per
+        # transition weights the burst ten times too heavily.
+        _, taus = run(make("high_time_variance"), fixed(A), steps=11, seed=0)
+        self.assertEqual(len(taus), 11)
+        self.assertAlmostEqual(taus[0] / sum(taus), 10 / 11)
+        self.assertAlmostEqual(sum(taus[1:]) / sum(taus), 1 / 11)
+
+    def test_the_criteria_disagree_about_the_burst_by_a_factor_of_five(self):
+        rewards, taus = run(make("high_time_variance"), fixed(A), steps=1_100, seed=0)
+        time_average = rate(rewards, taus)
+        mean_of_transition_rates = statistics.fmean(r / t for r, t in zip(rewards, taus))
+        self.assertAlmostEqual(time_average, 20 / 11, places=9)
+        self.assertAlmostEqual(mean_of_transition_rates, 101 / 11, places=9)
+        self.assertGreater(mean_of_transition_rates / time_average, 5.0)
+
+    def test_the_option_survives_only_while_rho_stays_under_1_point_9(self):
+        # Under R-learning the option is preferred while
+        # (R_cycle - rho*T_cycle) > (r_steady - rho*tau_steady), and the
+        # environment is built so that threshold sits just 4.5% above the option's
+        # own true rate.
+        config = ENVS["high_time_variance"].build().config
+        cycle_reward = cycle_time = 0.0
+        state = "s0"
+        while True:
+            transition, = config.transitions[(state, A)]
+            cycle_reward += transition.reward()
+            cycle_time += transition.duration()
+            state = transition.next_state()
+            if state == "s0":
+                break
+        steady, = config.transitions[("s0", B)]
+        threshold = ((cycle_reward - steady.reward())
+                     / (cycle_time - steady.duration()))
+        self.assertAlmostEqual(threshold, 1.9)
+        self.assertGreater(threshold, cycle_reward / cycle_time)
+        self.assertLess(threshold / (cycle_reward / cycle_time), 1.05)
+
+    def test_the_estimators_overshoot_in_the_order_the_config_claims(self):
+        # The rho each estimator averages over the transitions of the always-a
+        # cycle -- which is the rho the updates actually see. Deterministic, and
+        # the ordering holds at every beta: forgetting in seconds overshoots less
+        # than forgetting in transitions, and both overshoot.
+        rewards, taus = run(make("high_time_variance"), fixed(A), steps=4_400, seed=0)
+        stream = list(zip(rewards, taus))
+        truth = rate(rewards, taus)
+
+        def settled_mean(estimator):
+            values = [estimator.update(r, t) for r, t in stream]
+            return statistics.fmean(values[len(values) // 2:])
+
+        for beta in (0.3, 0.2, 0.1, 0.05):
+            with self.subTest(beta=beta):
+                cumulative = settled_mean(CumulativeTimeRate())
+                timed = settled_mean(NormalizedExponentialMovingTimeRate(beta))
+                ratio = settled_mean(ExponentialMovingRatioRate(beta))
+                self.assertAlmostEqual(cumulative, truth, places=2)
+                self.assertLess(truth, timed)
+                self.assertLess(timed, ratio)
+
+        # At the registered environment's default beta the gap is worth stating.
+        self.assertAlmostEqual(
+            settled_mean(NormalizedExponentialMovingTimeRate(0.3)), 2.488, places=3)
+        self.assertAlmostEqual(
+            settled_mean(ExponentialMovingRatioRate(0.3)), 2.868, places=3)
+
+    def test_the_estimators_agree_again_once_the_gain_is_small(self):
+        # The disagreement is a fixed-gain effect, not an asymptotic bias.
+        rewards, taus = run(make("high_time_variance"), fixed(A), steps=22_000, seed=0)
+        for estimator in (NormalizedExponentialMovingTimeRate(1e-4),
+                          ExponentialMovingRatioRate(1e-4)):
+            with self.subTest(estimator=type(estimator).__name__):
+                value = 0.0
+                for reward, tau in zip(rewards, taus):
+                    value = estimator.update(reward, tau)
+                self.assertAlmostEqual(value, 20 / 11, places=2)
 
 
 # ------------------------------------------------------------------ risk

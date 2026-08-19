@@ -16,12 +16,13 @@ import os
 import shutil
 import tempfile
 import unittest
+from random import Random
 
 from examples import make_plots, make_report, run, source_settings
 from examples.envs import ENVS, make
 from examples.run import (AGENTS, ORACLE, agent_names, build_agent, collect,
                           greedy, parse_args, resolve_budget, resolve_greedy,
-                          run_job, train, write)
+                          run_job, safe_eval, train, write)
 
 
 def job(**overrides):
@@ -111,8 +112,29 @@ class TrainingLoopTests(unittest.TestCase):
         self.assertNotAlmostEqual(result["window_rate"], result["lifetime_rate"],
                                   places=9)
 
+    def test_the_smoothers_split_on_high_time_variance(self):
+        # What high_time_variance exists to show, end to end. The cumulative rate
+        # is exact and keeps the option on every seed; the two fixed-gain
+        # smoothers both overshoot the 1.9 threshold sometimes and drop it, and
+        # the one that forgets per unit time drops it less often than the one
+        # that forgets per transition. Pooled over seeds, not per seed: which
+        # individual seeds flip is noisy.
+        kept = {}
+        for name in ("SMART", "SmoothedSMART", "RelaxedSMART"):
+            kept[name] = 0
+            for seed in range(1, 13):
+                env = make("high_time_variance")
+                agent = build_agent(name, env, seed)
+                train(agent, env, budget=20_000, seed=seed, unit="steps",
+                      curve_points=0)
+                choice = safe_eval(agent, "s0", Random(seed),
+                                   env.get_available_actions("s0"))
+                kept[name] += choice == 0
+        self.assertEqual(kept["SMART"], 12)
+        self.assertGreater(kept["SmoothedSMART"], kept["RelaxedSMART"])
+
     def test_no_agent_needs_its_actions_overridden(self):
-        # Was: MAB, UCB and RandomAgent drew from the full action space, so on
+        # Was: the bandits and RandomAgent drew from the full action space, so on
         # risk (whose s2 allows only "back") the runner had to substitute a legal
         # action for up to half their decisions. Now every agent routes its choice
         # through get_available_actions, so nothing is ever overridden.
@@ -243,7 +265,7 @@ class ReportAggregationTests(unittest.TestCase):
     def test_the_bandits_are_excluded_but_random_agent_is_not(self):
         heavy = runs([1.0, 1.0], illegal=0.5)
         self.assertTrue(make_report.distorted("UCB", heavy))
-        self.assertTrue(make_report.distorted("MAB", heavy))
+        self.assertTrue(make_report.distorted("EpsilonGreedyMAB", heavy))
         self.assertFalse(make_report.distorted("RandomAgent", heavy))
         self.assertFalse(make_report.distorted("UCB", runs([1.0], illegal=0.0)))
 
@@ -405,10 +427,11 @@ class SourceSettingsTests(unittest.TestCase):
         self.assertEqual(ENVS["btc_market"].budget_steps, 32_900)
 
     def test_the_unattributed_environments_are_marked_as_such(self):
-        # The source has these commented out at its only call site, so their budget
-        # is this repo's choice and must not read as provenance.
+        # The source has these commented out at its only call site — and two_path
+        # and high_time_variance have no source at all — so their budget is this
+        # repo's choice and must not read as provenance.
         for name in ("gemini", "feinberg", "hell_or_heaven", "bonus", "schwartz",
-                     "risk", "non_stationary", "two_path"):
+                     "risk", "non_stationary", "two_path", "high_time_variance"):
             with self.subTest(env=name):
                 self.assertFalse(ENVS[name].attributed)
         for name in ("sincoslog", "ratio_vs_step_rate", "stateless", "btc_market",

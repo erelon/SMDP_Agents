@@ -40,7 +40,7 @@ time and rho-versus-time curves.
 
 Agents
 ------
-The thirteen tabular agents, plus ``Oracle`` on the environments that expose a
+The eighteen tabular agents, plus ``Oracle`` on the environments that expose a
 ``secret``. The deep and PPO agents are out of scope here: they need a network
 per observation space, which is a different experiment.
 
@@ -70,9 +70,13 @@ for _threads in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS",
                  "NUMEXPR_NUM_THREADS"):
     os.environ.setdefault(_threads, "1")
 
-from agents import (MAB, SMART, UCB, ContinuesMAB, ContinuosUCB,  # noqa: E402
-                    ContinuousQLearning, ContinuousRLearning, Harmonic, Oracle,
-                    QLearning, RandomAgent, RelaxedSMART, RLearning,
+from agents import (SMART, UCB, ContinuosUCB,  # noqa: E402
+                    ContinuousEpsilonGreedyMAB, ContinuousQLearning,
+                    ContinuousRLearning, CumulativeHarmonic,
+                    CumulativeWeightedHarmonic, EpsilonGreedyMAB,
+                    ExperimentalCumulativeWeightedHarmonic,
+                    ExperimentalWeightedHarmonic, Harmonic, Oracle, QLearning,
+                    RandomAgent, RelaxedSMART, RLearning, SmoothedSMART,
                     WeightedHarmonic)
 
 try:  # belt and braces: fork inherits an already-initialised pool
@@ -93,10 +97,17 @@ AGENTS: Dict[str, tuple] = {
     "ContinuousRLearning": (ContinuousRLearning, {}),
     "SMART": (SMART, {}),
     "RelaxedSMART": (RelaxedSMART, {}),
+    "SmoothedSMART": (SmoothedSMART, {}),
     "Harmonic": (Harmonic, {}),
     "WeightedHarmonic": (WeightedHarmonic, {}),
-    "MAB": (MAB, {}),
-    "ContinuesMAB": (ContinuesMAB, {}),
+    "CumulativeHarmonic": (CumulativeHarmonic, {}),
+    "CumulativeWeightedHarmonic": (CumulativeWeightedHarmonic, {}),
+    # Experimental: the same two, with the TD advantage divided by |rho|.
+    "ExperimentalWeightedHarmonic": (ExperimentalWeightedHarmonic, {}),
+    "ExperimentalCumulativeWeightedHarmonic":
+        (ExperimentalCumulativeWeightedHarmonic, {}),
+    "EpsilonGreedyMAB": (EpsilonGreedyMAB, {}),
+    "ContinuousEpsilonGreedyMAB": (ContinuousEpsilonGreedyMAB, {}),
     "UCB": (UCB, {}),
     "ContinuosUCB": (ContinuosUCB, {}),
     "RandomAgent": (RandomAgent, {}),

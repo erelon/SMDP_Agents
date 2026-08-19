@@ -1,7 +1,13 @@
 from .base import Agent
 
 
-class ContinuesMAB(Agent):
+class ContinuousEpsilonGreedyMAB(Agent):
+    """Epsilon-greedy bandit whose action value is a *reward rate*.
+
+    Total reward over total holding time per action, so a slow action is not
+    rewarded for taking longer -- the SMDP reading of "best arm".
+    """
+
     def __init__(self, name: str, action_space=None, learning_rate=0.1, exploration_rate=0.1, **kwargs):
         super().__init__(name, action_space, **kwargs)
         self.learning_rate = learning_rate
@@ -38,7 +44,14 @@ class ContinuesMAB(Agent):
         self.q_table[state][action] = self.total_reward[state][action] / self.total_time[state][action]
 
 
-class MAB(Agent):
+class EpsilonGreedyMAB(Agent):
+    """Epsilon-greedy bandit over the per-step sample mean.
+
+    Total reward over the number of decisions, ignoring holding times, which
+    is the textbook bandit and the discrete-time counterpart of
+    :class:`ContinuousEpsilonGreedyMAB`.
+    """
+
     def __init__(self, name: str, action_space=None, learning_rate=0.1, exploration_rate=0.1, **kwargs):
         super().__init__(name, action_space, **kwargs)
         self.learning_rate = learning_rate

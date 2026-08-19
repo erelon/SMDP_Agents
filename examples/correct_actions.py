@@ -56,6 +56,7 @@ from typing import Any, Callable, Dict, Hashable, Optional, Union
 TIME_AVERAGE = "time-average"
 RATIO_OF_EXPECTATIONS = "ratio-of-expectations"
 MEAN_OF_RATES = "mean-of-per-transition-rates"
+MEAN_TIME_PER_REWARD = "mean time per unit reward (1/E[tau/r])"
 LONG_RUN_RATE = "long-run rate of the always-this-action policy"
 RISK_NEUTRAL = "risk-neutral (highest mean)"
 BEST_STATIONARY = "best stationary action (the deciding state is unobservable)"
@@ -99,20 +100,36 @@ def sincoslog_log_scale(env) -> Optional[float]:
     return None
 
 
-def visits_to_overtake(log_scale: float, cap: int = 10_000_000) -> Optional[int]:
+def sincoslog_return_reward(env) -> float:
+    """What the ``s2 -> s1`` leg of a built sincoslog environment pays.
+
+    Every visit to ``s1`` takes that leg exactly once, so it enters the cumulative
+    rate of *both* arms and :func:`visits_to_overtake` needs it.
+    """
+    transition, = env.config.transitions[("s2", 0)]
+    return float(transition.constant("reward"))
+
+
+def visits_to_overtake(log_scale: float, cap: int = 10_000_000,
+                       return_reward: float = 1.0) -> Optional[int]:
     """How many ``s1`` visits before the sin/log arm's cumulative rate beats the ramp.
 
     This is the number that makes sincoslog a trap. The ramp's cumulative rate grows
     linearly in the visit count (``0.05 n(n+1)/2`` reward over ``2n`` time, so about
     ``0.0125 n``); the sin/log arm's grows exponentially, as
     ``10 ** (n * log_scale / 2)``, because its reward's exponent climbs twice as fast
-    as its holding time's. Exponential wins eventually, but "eventually" is
-    **867,213 visits at log_scale=1e-5** against the 500 an episode provides.
+    as its holding time's. Exponential wins eventually, but "eventually" is far
+    beyond any horizon a run simulates at the slow end of the sweep.
+
+    ``return_reward`` is what the ``s2 -> s1`` leg pays, which every visit takes
+    exactly once, so it adds ``n * return_reward`` to *both* numerators. It is not a
+    wash: it lifts the ramp's rate off the floor early -- the ramp's own reward
+    starts near zero -- and so moves the crossover. Pass the value the environment
+    was built with; :func:`sincoslog_return_reward` reads it off a built one.
 
     Computed in closed form with the oscillation dropped, which is safe because the
-    offset of 10 dominates the amplitude of 1; it reproduces a direct simulation of
-    the source's processes exactly at 1e-5, 1.4e-5 and 1.27e-4. ``None`` if the arm
-    does not overtake within ``cap``.
+    offset of 10 dominates the amplitude of 1. ``None`` if the arm does not overtake
+    within ``cap``.
     """
     if log_scale <= 0:
         return None
@@ -121,8 +138,9 @@ def visits_to_overtake(log_scale: float, cap: int = 10_000_000) -> Optional[int]
 
     def ahead(n: int) -> bool:
         try:
-            ramp = (0.05 * n * (n + 1) / 2.0) / (2.0 * n)
-            reward = 10.0 * (q_r ** (n + 1) - q_r) / (q_r - 1.0)
+            ramp = (0.05 * n * (n + 1) / 2.0 + n * return_reward) / (2.0 * n)
+            reward = (10.0 * (q_r ** (n + 1) - q_r) / (q_r - 1.0)
+                      + n * return_reward)
             duration = 10.0 * (q_t ** (n + 1) - q_t) / (q_t - 1.0) + n
             return reward / duration > ramp
         except OverflowError:  # the exponential has run away, so it is ahead
@@ -188,10 +206,14 @@ def _sincoslog_correct(env) -> int:
 
 #: The ``log_scale`` above which the sin/log arm out-earns the ramp *within* one
 #: 1,000-step episode. Below it the arm is still asymptotically correct but its payoff
-#: lies beyond the horizon, which is what makes those configurations traps. Measured
-#: by simulating both fixed policies across the swept range; the boundary falls
-#: between the grid points 0.004175 and 0.005736, exactly at 0.0042825.
-SINCOSLOG_CROSSOVER = 0.0042825
+#: lies beyond the horizon, which is what makes those configurations traps. It falls
+#: between the grid points 0.004175 and 0.005736 either way, so which sweep points are
+#: traps is unchanged (20 of 30), but the exact boundary moves with the ``s2 -> s1``
+#: leg's reward: 0.0042845 when that leg pays nothing, as the source had it, and
+#: 0.0044206 at this repo's ``return_reward=1``.
+SINCOSLOG_CROSSOVER = 0.0044206
+#: The same boundary with the source's unpaid return leg, for comparison.
+SINCOSLOG_CROSSOVER_UNPAID_RETURN = 0.0042845
 
 #: ``PythonProject3/robustness_table.py:55``: ``CORRECT_ACTION = 1``, the sin/log arm,
 #: for every environment in the sweep. Deliberate and consistently maintained — the
@@ -211,7 +233,8 @@ def _sincoslog_detail(env) -> str:
     log_scale = sincoslog_log_scale(env)
     if log_scale is None:  # pragma: no cover
         return ""
-    visits = visits_to_overtake(log_scale)
+    visits = visits_to_overtake(log_scale,
+                                return_reward=sincoslog_return_reward(env))
     horizon = env.max_steps // 2 if env.max_steps else SINCOSLOG_VISITS_PER_EPISODE
     if visits is None:
         return "the sin/log arm never overtakes within a reasonable horizon"
@@ -240,6 +263,38 @@ CORRECT: Dict[str, CorrectChoice] = {
         note="at the source's p=0.1 the jackpot action's mean per-transition rate "
              "is 10.0 but its time-average is 0.012, against a steady 1.0",
         source="measured 1.0 against 0.0122 long-run"),
+    "high_time_variance": CorrectChoice(
+        state="s0", action=0, criterion=LONG_RUN_RATE, bait=None,
+        note="not a trap: the bursty option runs at 20/11 = 1.818 against the "
+             "steady action's 1.0 and also pays 10 on the spot against 1, so it "
+             "wins on both readings. It is a *rho* trap instead. Under R-learning "
+             "the option survives only while rho < (20-1)/(11-1) = 1.9, which is "
+             "4.5% above its own true rate, and the cycle spends 10 of its 11 time "
+             "units in 1 of its 11 transitions — so an estimator that forgets per "
+             "transition rather than per unit time is pulled toward the burst's "
+             "rate of 10, clears 1.9, and drops the option. Over 60 seeds SMART "
+             "and CumulativeWeightedHarmonic keep it 60 times, SmoothedSMART 39, "
+             "RelaxedSMART and WeightedHarmonic 31, Harmonic 29 and "
+             "CumulativeHarmonic 19. Two effects, not one: among the estimators "
+             "that forget, the size of the overshoot orders the outcome — but "
+             "CumulativeHarmonic overshoots *less* than Harmonic and still does "
+             "worst, because it cannot forget the burst once the agent has "
+             "switched away. The pairs that tie do so by identity: with every "
+             "reward positive, a reward-weighted harmonic mean *is* the ratio of "
+             "the same two averages",
+        source="measured 1.818 against 1.0 long-run; the config docstring derives "
+               "the 1.9 threshold and tabulates the measured rates"),
+    "harmonic_criterion": CorrectChoice(
+        state="s0", action=1, criterion=MEAN_TIME_PER_REWARD, bait=None,
+        note="b costs 2 time units per unit of reward against a's 5.05, so it wins "
+             "under 1/E[tau/r] — the one criterion only the unweighted harmonic "
+             "estimator computes. It loses under both others (rate 0.5 against "
+             "1.0 by ratio-of-means and 5.05 by mean-of-rates), so this entry is "
+             "meaningless without its criterion attached, exactly as gemini's is. "
+             "No agent actually takes it: a harmonic rho is not the gain of any "
+             "policy, so R-learning's relative values diverge rather than ranking "
+             "the arms — see the config docstring",
+        source="exact from the transition table; the divergence is measured"),
     # --- risk -----------------------------------------------------------------
     "risk": CorrectChoice(
         state="s1", action=1, criterion=RISK_NEUTRAL, bait=None,
@@ -275,8 +330,8 @@ CORRECT: Dict[str, CorrectChoice] = {
         state="s1", action=_sincoslog_correct, criterion=ASYMPTOTIC_RATE, bait=0,
         bait_by=WINDOW_RATE, detail=lambda env: _sincoslog_detail(env),
         note="the sin/log arm is correct because its rate grows exponentially and "
-             "the ramp's only linearly — but it needs 3,256 visits to overtake at "
-             "the registered log_scale=1e-3, and 867,213 at 1e-5, against the 500 an "
+             "the ramp's only linearly — but it needs 4,005 visits to overtake at "
+             "the registered log_scale=1e-3, and 867,218 at 1e-5, against the 500 an "
              "episode provides. So the *bait is the ramp*: inside the window it "
              "earns 6.25 against 1.39, and an agent that trusts what it can measure "
              "takes it. Under R-learning the sin/log arm survives only while "

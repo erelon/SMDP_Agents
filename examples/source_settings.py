@@ -66,10 +66,24 @@ Deviations from the sources, all deliberate and all also noted at the point of u
 * ``btc_market`` uses relative rather than absolute returns and couples the holding
   time to the return; the source used absolute dollars and drew the holding time at
   random, independently of the return.
+* ``sincoslog``'s ``s2 -> s1`` leg pays 1 here and paid 0 in the source. That leg is a
+  pure bookkeeping edge — ``s2`` has one action — but it is half of every trajectory's
+  transitions, so an unpaid one made the environment 50% zero-reward and handed the
+  harmonic estimators a large rho deflation that had nothing to do with the task. See
+  the ``sincoslog`` config docstring; ``return_reward=0.0`` restores the source's.
 * Seed counts here are set on the command line, not by the source. Every source
   above used 30 (or, for ``PythonProject3``, one).
 * ``epsilon_decay`` and ``tau`` in ``BtcSwarm``'s config are dead parameters — read
   nowhere in that code — so no schedule is applied for it.
+* ``SmoothedSMART`` postdates all five sources and appears in none of them. It is
+  given ``RelaxedSMART``'s settings wherever those exist, because ``beta`` is the
+  one thing the two estimators differ over and running them at different gains
+  would compare the gains rather than the estimators.
+* ``CumulativeHarmonic`` and ``CumulativeWeightedHarmonic`` likewise postdate every
+  source. They take their EMA counterpart's learning and exploration rates so the
+  pair differs only in whether it forgets, and no ``rho_learning_rate``: a
+  cumulative average has no gain to set, and passing one would read as a setting
+  that does something.
 """
 
 from __future__ import annotations
@@ -102,9 +116,19 @@ def _pp3(shared: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     bandits keep the library defaults. ``discount_factor`` is never passed and is
     unused by the R-learning family anyway, since ``set_target`` returns
     ``(r - rho*tau) + next_q``.
+
+    ``SmoothedSMART`` postdates every source and appears in none of them. It is
+    included here because ``beta`` is exactly what it and ``RelaxedSMART``
+    differ over -- one forgets per transition, the other per unit time -- so
+    running the two at different betas would compare the gains rather than the
+    estimators. The two cumulative harmonics are here for the same reason; they
+    accept ``rho_learning_rate`` like every agent in the family but never read it.
     """
     rate_agents = ("RLearning", "ContinuousRLearning", "SMART", "RelaxedSMART",
-                   "Harmonic", "WeightedHarmonic")
+                   "SmoothedSMART", "Harmonic", "WeightedHarmonic",
+                   "CumulativeHarmonic", "CumulativeWeightedHarmonic",
+                   "ExperimentalWeightedHarmonic",
+                   "ExperimentalCumulativeWeightedHarmonic")
     plain = {"learning_rate": shared["learning_rate"],
              "exploration_rate": shared["exploration_rate"]}
     table: Dict[str, Dict[str, Any]] = {"QLearning": dict(plain),
@@ -132,18 +156,37 @@ TIME_BASED = {
               "rho_learning_rate": 0.3, "with_rho_trick": True},
     "RelaxedSMART": {"learning_rate": 0.3, "exploration_rate": 0.1,
                      "rho_learning_rate": 0.05, "with_rho_trick": True},
+    "SmoothedSMART": {"learning_rate": 0.3, "exploration_rate": 0.1,   # not in
+                      "rho_learning_rate": 0.05,                       # the source
+                      "with_rho_trick": True},
     "WeightedHarmonic": {"learning_rate": 0.3, "exploration_rate": 0.1,
                          "rho_learning_rate": 0.003, "with_rho_trick": True},
     "Harmonic": {"learning_rate": 0.3, "exploration_rate": 0.1,
                  "rho_learning_rate": 0.3, "with_rho_trick": True},
-    "MAB": {"learning_rate": 0.1, "exploration_rate": 0.1},                # disabled
-    "ContinuesMAB": {"learning_rate": 0.1, "exploration_rate": 0.1},       # disabled
+    # The two cumulative harmonics are not in the source either; they take
+    # their EMA counterpart's settings, and ignore rho_learning_rate.
+    "CumulativeHarmonic": {"learning_rate": 0.3, "exploration_rate": 0.1,
+                           "with_rho_trick": True},
+    "CumulativeWeightedHarmonic": {"learning_rate": 0.3,
+                                   "exploration_rate": 0.1,
+                                   "with_rho_trick": True},
+    "ExperimentalWeightedHarmonic": {"learning_rate": 0.3, "exploration_rate": 0.1,
+                                     "rho_learning_rate": 0.3,
+                                     "with_rho_trick": True},
+    "ExperimentalCumulativeWeightedHarmonic": {"learning_rate": 0.3,
+                                               "exploration_rate": 0.1,
+                                               "with_rho_trick": True},
+    "EpsilonGreedyMAB": {"learning_rate": 0.1,                             # disabled
+                         "exploration_rate": 0.1},
+    "ContinuousEpsilonGreedyMAB": {"learning_rate": 0.1,                   # disabled
+                                   "exploration_rate": 0.1},
     "UCB": {"exploration_constant": 5.0},
     "ContinuosUCB": {"exploration_constant": 5.0},
 }
 
 #: Agents ``TimeBasedAgentsComparer``'s canonical config has ``enabled: false``.
-TIME_BASED_DISABLED = ("QLearning", "ContinuousRLearning", "MAB", "ContinuesMAB")
+TIME_BASED_DISABLED = ("QLearning", "ContinuousRLearning", "EpsilonGreedyMAB",
+                       "ContinuousEpsilonGreedyMAB")
 
 #: ``BtcSwarm/default-config.json``'s ``agent_params``. It ran three agents:
 #: ``SMARTRLAgent`` (SMART), ``HarmonicRLAgent`` (WeightedHarmonic) and
@@ -164,12 +207,25 @@ BTC_SWARM = {
               "rho_learning_rate": 0.1, "with_rho_trick": True},
     "RelaxedSMART": {"learning_rate": 0.001, "exploration_rate": 0.2,
                      "rho_learning_rate": 0.1, "with_rho_trick": True},
+    "SmoothedSMART": {"learning_rate": 0.001, "exploration_rate": 0.2,
+                      "rho_learning_rate": 0.1, "with_rho_trick": True},
     "Harmonic": {"learning_rate": 0.001, "exploration_rate": 0.2,
                  "rho_learning_rate": 0.1, "with_rho_trick": True},
     "WeightedHarmonic": {"learning_rate": 0.001, "exploration_rate": 0.2,
                          "rho_learning_rate": 0.1, "with_rho_trick": True},
-    "MAB": {"exploration_rate": 0.2},
-    "ContinuesMAB": {"exploration_rate": 0.2},
+    "CumulativeHarmonic": {"learning_rate": 0.001, "exploration_rate": 0.2,
+                           "with_rho_trick": True},
+    "CumulativeWeightedHarmonic": {"learning_rate": 0.001,
+                                   "exploration_rate": 0.2,
+                                   "with_rho_trick": True},
+    "ExperimentalWeightedHarmonic": {"learning_rate": 0.001, "exploration_rate": 0.2,
+                                     "rho_learning_rate": 0.1,
+                                     "with_rho_trick": True},
+    "ExperimentalCumulativeWeightedHarmonic": {"learning_rate": 0.001,
+                                               "exploration_rate": 0.2,
+                                               "with_rho_trick": True},
+    "EpsilonGreedyMAB": {"exploration_rate": 0.2},
+    "ContinuousEpsilonGreedyMAB": {"exploration_rate": 0.2},
 }
 
 #: Sources whose budget for an environment is *not* recorded anywhere, so the number
@@ -242,6 +298,21 @@ WHACK_A_MOLE_BUDGET = {
     "wam_smdp_up_down_whack_downed": 600_000,
 }
 
+#: Agent names as the source repositories recorded them -> this library's current
+#: class names. ``data/whack_a_mole_hp.json`` is a *verbatim* copy of that repo's
+#: ``best_hp.json``, so a rename on this side is translated on read rather than
+#: edited into the data, which would stop it being a copy of anything.
+LEGACY_AGENT_NAMES = {
+    "MAB": "EpsilonGreedyMAB",
+    "ContinuesMAB": "ContinuousEpsilonGreedyMAB",
+}
+
+
+def current_agent_name(name: str) -> str:
+    """The class name this library uses for a source's agent name."""
+    return LEGACY_AGENT_NAMES.get(name, name)
+
+
 _whack_a_mole_hp: Optional[Dict[str, Dict[str, Dict[str, Any]]]] = None
 
 
@@ -263,7 +334,8 @@ def whack_a_mole_hp(env_name: str) -> Dict[str, Dict[str, Any]]:
     if key not in _whack_a_mole_hp:
         raise KeyError(f"no recorded hyperparameters for {env_name!r} (looked for "
                        f"{key!r} in {os.path.basename(WHACK_A_MOLE_HP)})")
-    return _whack_a_mole_hp[key]
+    return {current_agent_name(agent): dict(kwargs)
+            for agent, kwargs in _whack_a_mole_hp[key].items()}
 
 
 def settings(env_name: str, source: str) -> Dict[str, Any]:

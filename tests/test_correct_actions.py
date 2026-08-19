@@ -78,7 +78,7 @@ class CorrectActionTableTests(unittest.TestCase):
         # other action), and risk under risk-neutrality.
         # sincoslog joins them: its correct action is correct *asymptotically*, and
         # deliberately loses over the horizon a run simulates — that is the trap.
-        by_criterion = {"gemini", "risk", "sincoslog"}
+        by_criterion = {"gemini", "risk", "sincoslog", "harmonic_criterion"}
         for name, choice in CORRECT.items():
             if name in by_criterion:
                 continue
@@ -171,12 +171,31 @@ class SincoslogCorrectActionTests(unittest.TestCase):
 
     def test_the_overtake_count_reproduces_a_direct_simulation(self):
         # Closed form with the oscillation dropped (offset 10 >> amplitude 1); these
-        # three were confirmed against a simulation of the source's own processes.
+        # three were confirmed against a simulation of the source's own processes,
+        # whose s2 -> s1 leg paid nothing.
         for log_scale, expected in ((1e-5, 867_213), (1.4e-5, 596_189),
                                     (0.000127, 48_570)):
+            with self.subTest(log_scale=log_scale, return_reward=0.0):
+                self.assertEqual(
+                    correct_actions.visits_to_overtake(log_scale, return_reward=0.0),
+                    expected)
+
+    def test_paying_for_the_return_leg_moves_the_overtake_count_slightly(self):
+        # This repo pays 1 for s2 -> s1, which adds n to both arms' cumulative
+        # reward. It shifts the crossover a little later -- the ramp's own reward
+        # starts near zero, so a flat 1 per visit helps it proportionally more --
+        # but nowhere near enough to change which configurations are traps.
+        env = make("sincoslog")
+        self.assertEqual(correct_actions.sincoslog_return_reward(env), 1.0)
+        for log_scale, unpaid, paid in ((1e-5, 867_213, 867_218),
+                                        (0.000127, 48_570, 48_577),
+                                        (1e-3, 3_994, 4_005)):
             with self.subTest(log_scale=log_scale):
-                self.assertEqual(correct_actions.visits_to_overtake(log_scale),
-                                 expected)
+                self.assertEqual(
+                    correct_actions.visits_to_overtake(log_scale, return_reward=0.0),
+                    unpaid)
+                self.assertEqual(correct_actions.visits_to_overtake(log_scale), paid)
+                self.assertGreater(paid, unpaid)
 
     def test_the_payoff_is_far_beyond_the_horizon_for_most_of_the_sweep(self):
         from examples.envs.configs import SINCOSLOG_LOG_SCALES

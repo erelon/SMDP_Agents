@@ -12,9 +12,17 @@ RESET = "\033[0m"
 
 GROUP_NAMES = {
     "HarmonicTests": "Harmonic / WeightedHarmonic",
+    "CumulativeHarmonicTests": "CumulativeHarmonic / CumulativeWeightedHarmonic",
+    "HarmonicTargetTests": "Harmonic family / TD target",
+    "ExperimentalHarmonicTargetTests": "Experimental harmonic / |rho| target",
     "RelaxedSmartTests": "RelaxedSMART",
     "SmartTests": "SMART",
-    "EpsilonGreedyBanditTests": "MAB / ContinuesMAB",
+    "SmoothedSmartTests": "SmoothedSMART",
+    "CumulativeAverageTests": "Average rates / cumulative average",
+    "CumulativeWeightedHarmonicRateTests": "Average rates / cumulative harmonic",
+    "TimeDecayedEMATests": "Average rates / time-decayed EMA",
+    "ExponentialTimeRateTests": "Average rates / time-domain rate",
+    "EpsilonGreedyBanditTests": "EpsilonGreedyMAB / ContinuousEpsilonGreedyMAB",
     "UcbTests": "UCB / ContinuosUCB",
     "AgentCoreTests": "Agent",
     "OracleTests": "Oracle",
