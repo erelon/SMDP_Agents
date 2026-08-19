@@ -2,7 +2,8 @@ import copy
 from random import Random
 from typing import Any, Dict, List, Optional
 
-MAX_REWARDS = 0 
+MAX_REWARDS = 0
+
 
 class Agent:
     def __init__(self, name: str, action_space: Optional[List[int]] = None, seed: int = 42, env=None, **kwargs):
@@ -17,6 +18,7 @@ class Agent:
         self.rng.seed(self.seed)
         self.policy_changed = False
         self.last_policy_changed_at = 0  # track last episode of policy change
+        self.step_count = 0
 
     def get_available_actions(self, state):
         """Get available actions for a state. If env is set, use it; otherwise use full action_space."""
@@ -36,6 +38,7 @@ class Agent:
         self.q_table = {}
         self.policy_changed = False
         self.last_policy_changed_at = 0
+        self.step_count = 0
 
     def act(self, state):
         raise NotImplementedError
@@ -44,7 +47,7 @@ class Agent:
         raise NotImplementedError
 
     def learn(self, state, action, reward, next_state, time):
-        raise NotImplementedError
+        self.step_count += 1
 
     def _check_convergence(self, state, action, update_value, assign=False):
         if len(self.q_table) == 0 or state not in self.q_table:

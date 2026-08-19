@@ -154,6 +154,10 @@ class DeepQWrapper(ContinuousQLearning):
         """
         Compute the TD target using the wrapped agent's set_target logic and
         the appropriate network (target or main) for next-state Q-values.
+
+        ``time`` is an already-resolved holding time.  learn() applies
+        holding_time() once, before this call and before storing the
+        transition, so replayed targets stay on the same clock.
         """
         net = self.target_network if self.target_network is not None else self.network
         next_q_vals = self._q_values(next_state, net)
@@ -161,6 +165,13 @@ class DeepQWrapper(ContinuousQLearning):
         return self.set_target(reward, time, best_next_q)
 
     def learn(self, state, action, reward, next_state, time):
+        # Skip ContinuousQLearning's tabular update while retaining the base
+        # Agent bookkeeping through the super chain.
+        super(ContinuousQLearning, self).learn(state, action, reward, next_state, time)
+        # This learn() shadows the wrapped class's, so the discrete variants'
+        # one-step clock has to be applied here rather than inherited.  Exactly
+        # once: an override need not be idempotent.
+        time = self.holding_time(time)
         # ── Compute TD quantities using current Q-network ──────────────────
         td_target = self._compute_td_target(state, action, reward, next_state, time)
         q_vals_now = self._q_values(state, self.network)
@@ -172,10 +183,11 @@ class DeepQWrapper(ContinuousQLearning):
 
         # Call calc_new_rho if the wrapped class defines it (R-Learning variants)
         if hasattr(self, 'calc_new_rho'):
-            best_next_action = self.action_space[int(self._q_values(next_state, self.network).argmax())]
-            best_old_action = self.eval(state)
-            onpolicy = (action == best_old_action)
-            self.calc_new_rho(reward, time, td_target, td_error)
+            onpolicy = (action == self.eval(state))
+            # Same gate as ContinuousRLearning.update_table: with the rho trick
+            # on, only greedy transitions may move the rate estimate.
+            if not getattr(self, 'with_rho_trick', False) or onpolicy:
+                self.calc_new_rho(reward, time, td_target, td_error)
 
         # ── Gradient update ────────────────────────────────────────────────
         if self.replay_buffer is not None:

@@ -1,14 +1,15 @@
-# Agents package initialization
 from .base import Agent, MAX_REWARDS
 from .oracle import Oracle
 from .random_agent import RandomAgent
 from .q_learning import QLearning, ContinuousQLearning
 from .r_learning import ContinuousRLearning, RLearning
-from .smart_r import SMART, RelaxedSMART
+from .smart_r import SMART
+from .relaxed_smart import RelaxedSMART
 from .harmonic_r import Harmonic, WeightedHarmonic
-from .bandits import MAB, ContinuesMAB, UCB, ContinuosUCB
 from .deep_q_wrapper import DeepQWrapper
 from .ppo import PPO, RsmartPPO, SmartPPO, HarmonicPPO, RolloutBuffer
+from .mab_epsilon import MAB, ContinuesMAB
+from .mab_ucb import UCB, ContinuosUCB
 
 __all__ = [
     'Agent', 'MAX_REWARDS',

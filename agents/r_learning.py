@@ -1,5 +1,6 @@
 from .q_learning import ContinuousQLearning
 
+
 class ContinuousRLearning(ContinuousQLearning):
     def __init__(self, name: str, action_space=None, learning_rate=0.2, exploration_rate=0.1, with_rho_trick=True,
                  rho_learning_rate=0.03, **kwargs):
@@ -20,5 +21,5 @@ class ContinuousRLearning(ContinuousQLearning):
 
 
 class RLearning(ContinuousRLearning):
-    def learn(self, state, action, reward, next_state, time):
-        super().learn(state, action, reward, next_state, 1.0)
+    def holding_time(self, time):
+        return 1.0

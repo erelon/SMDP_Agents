@@ -43,7 +43,8 @@ from torch import optim
 from .base import Agent
 from .gaussian_mlp import GaussianMLP, gaussian_entropy, gaussian_logp
 from .harmonic_r import Harmonic
-from .smart_r import SMART, RelaxedSMART
+from .smart_r import SMART
+from .relaxed_smart import RelaxedSMART
 
 
 def _t(x, device):
