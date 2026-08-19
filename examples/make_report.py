@@ -1,7 +1,7 @@
 """Turn the runner's JSON into a Markdown report.
 
     python -m examples.make_report                       # results/ -> results/REPORT.md
-    python -m examples.make_report --metric greedy_rate
+    python -m examples.make_report --metric eval_rate
     python -m examples.make_report --results other/ --out other/REPORT.md
 
 Produces, in order: a winner per environment, a win tally across agents, a
@@ -47,7 +47,7 @@ SUBSTITUTION_HARMLESS = frozenset({"RandomAgent"})
 #: baseline but an honest one, and if it wins something that is worth knowing.
 PRIVILEGED = frozenset({"Oracle"})
 
-METRICS = ("lifetime_rate", "window_rate", "greedy_rate")
+METRICS = ("lifetime_rate", "window_rate", "eval_rate")
 
 
 def load(results_dir: str) -> List[Dict[str, Any]]:
@@ -134,6 +134,17 @@ def trap_probe(env_name: str) -> Optional[str]:
     return None
 
 
+def metric_for(record: Dict, default: str) -> str:
+    """The metric this environment is compared on.
+
+    An :class:`~examples.envs.EnvSpec` may override the report's global choice --
+    whack-a-mole does, because its runs are hundreds of thousands of time units of
+    permanent epsilon exploration and a lifetime average there measures the cost of
+    exploring more than the quality of what was learned.
+    """
+    return record.get("metric") or default
+
+
 def ranked(record: Dict, metric: str,
            agents: Optional[Dict[str, List[Dict]]] = None) -> List[Tuple]:
     """Agents ordered by correct-choice rate where that decides, then by ``metric``.
@@ -166,21 +177,23 @@ def fmt(value: float, spread: float = 0.0, places: int = 4) -> str:
 
 
 def winner_table(records: Sequence[Dict], metric: str) -> List[str]:
-    lines = ["| Family | Environment | Budget | Seeds | "
-             f"Winner ({metric}) | Runner-up | Ceiling |",
-             "|---|---|--:|--:|---|---|---|"]
+    lines = ["| Family | Environment | Budget | Seeds | Metric | "
+             "Winner | Runner-up | Ceiling |",
+             "|---|---|--:|--:|---|---|---|---|"]
 
     def budget_of(record):
         unit = record.get("budget_unit", "time")
         return f"{record['budget']:,.0f} {'steps' if unit == 'steps' else 'time'}"
     for record in records:
-        rows = ranked(record, metric, comparable(record))
+        chosen = metric_for(record, metric)
+        rows = ranked(record, chosen, comparable(record))
         trap = trap_probe(record["env"]) is not None
         if not rows:
             lines.append(f"| {record['family']} | `{record['env']}` | "
                          f"{budget_of(record)} | {len(record['seeds'])} | "
+                         f"`{chosen}` | "
                          f"— (every agent's actions were overridden) | — | "
-                         f"{ceiling(record, metric)} |")
+                         f"{ceiling(record, chosen)} |")
             continue
 
         def label(row):
@@ -210,7 +223,7 @@ def winner_table(records: Sequence[Dict], metric: str) -> List[str]:
                 best += " *(tied with the runner-up)*"
         lines.append(f"| {record['family']} | `{record['env']}` | "
                      f"{budget_of(record)} | {len(record['seeds'])} | "
-                     f"{best} | {second} | {ceiling(record, metric)} |")
+                     f"`{chosen}` | {best} | {second} | {ceiling(record, chosen)} |")
     return lines
 
 
@@ -218,7 +231,7 @@ def tally_table(records: Sequence[Dict], metric: str) -> List[str]:
     """Wins per agent, skipping the environments where three or more agents tie."""
     tally: Dict[str, int] = {}
     for record in records:
-        rows = ranked(record, metric, comparable(record))
+        rows = ranked(record, metric_for(record, metric), comparable(record))
         if not rows:
             continue
         top = rows[0]
@@ -236,6 +249,7 @@ def tally_table(records: Sequence[Dict], metric: str) -> List[str]:
 
 
 def leaderboard(record: Dict, metric: str) -> List[str]:
+    metric = metric_for(record, metric)
     lines = [f"### `{record['env']}`  ({record['family']})", "",
              record.get("note", ""), ""]
     episodes = summarise(next(iter(record["agents"].values())), "resets")[0]
@@ -243,7 +257,9 @@ def leaderboard(record: Dict, metric: str) -> List[str]:
     lines.append(f"Budget {record['budget']:,.0f} {unit}, "
                  f"{len(record['seeds'])} seeds, warmup {record['warmup_frac']:.0%}"
                  + (f", ~{episodes:,.0f} restarts per run" if episodes else "")
-                 + f". Sorted by {metric}.")
+                 + (f". Sorted by correct-choice rate, then {metric}."
+                    if trap_probe(record["env"]) is not None
+                    else f". Sorted by {metric}."))
     if record.get("source"):
         note = f"Protocol and hyperparameters from `{record['source']}`"
         if record.get("attributed") is False:
@@ -251,11 +267,11 @@ def leaderboard(record: Dict, metric: str) -> List[str]:
                     "budget above is this repo's choice, not provenance"
         if record.get("source_seeds"):
             note += f". The source itself used {record['source_seeds']} seed(s)"
-        greedy = record.get("greedy_budget")
-        if greedy:
-            origin = ("the source's own" if record.get("greedy_from_source")
-                      else "**not from the source**, which ran no greedy evaluation")
-            note += f". Greedy budget {greedy:,.0f} ({origin})"
+        evaluation = record.get("eval_budget")
+        if evaluation:
+            origin = ("the source's own" if record.get("eval_from_source")
+                      else "**not from the source**, which ran no evaluation")
+            note += f". Evaluation budget {evaluation:,.0f} ({origin})"
         schedule = record.get("epsilon_schedule")
         if schedule:
             note += (f". Epsilon decays {schedule['start']} -> {schedule['end']} "
@@ -273,14 +289,15 @@ def leaderboard(record: Dict, metric: str) -> List[str]:
             lines += ["", f"Library defaults: {', '.join(missing)}."]
         lines += ["", "</details>"]
     lines += ["",
-              "| Agent | lifetime_rate | window_rate | greedy_rate | rho | states | overridden |",
+              "| Agent | lifetime_rate | window_rate | eval_rate | rho | states | overridden |",
               "|---|--:|--:|--:|--:|--:|--:|"]
+    metric = metric_for(record, metric)
     for name, _, _, _ in ranked(record, metric):
         runs = record["agents"][name]
         share = overridden(runs)
         flag = " ⚠" if distorted(name, runs) else ""
         cells = [f"{name}{flag}"]
-        for key in ("lifetime_rate", "window_rate", "greedy_rate"):
+        for key in ("lifetime_rate", "window_rate", "eval_rate"):
             mean, spread = summarise(runs, key)
             cells.append(fmt(mean, spread))
         rho = fmt(summarise(runs, "rho")[0], places=3)
@@ -504,9 +521,15 @@ def build(records: Sequence[Dict], metric: str) -> str:
         f"{'/'.join(str(s) for s in seeds)} seeds. "
         f"Ranked by `{metric}`.",
         "",
-        "All rates are reward per unit time. `lifetime_rate` covers the whole "
+        "All rates are reward per unit time. Most environments are compared on "
+        "the report's global metric; an environment may override it, and the "
+        "**Metric** column says which was used. Whack-a-mole overrides to "
+        "`eval_rate` — its runs are 100k–600k time units of permanent "
+        "ε-exploration, so a lifetime average there measures the cost of "
+        "exploring more than the quality of what was learned. "
+        "`lifetime_rate` covers the whole "
         "run and so charges an agent for its learning transient and its permanent "
-        "ε-exploration; `window_rate` covers the post-warmup tail; `greedy_rate` "
+        "ε-exploration; `window_rate` covers the post-warmup tail; `eval_rate` "
         "is a separate run with exploration and learning switched off. `rho` is "
         "the agent's own final reward-rate estimate, which is the measurement of "
         "interest on the `criterion` environments.",

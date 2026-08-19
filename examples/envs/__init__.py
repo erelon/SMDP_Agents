@@ -86,15 +86,21 @@ class EnvSpec:
     #: Which source repository's protocol and hyperparameters apply; a key of
     #: ``source_settings.PROTOCOL``.
     source: str = "none"
-    #: Greedy-evaluation budget: a float is a fraction of the training budget, an int
+    #: Post-training evaluation budget: a float is a fraction of the training budget, an int
     #: an absolute amount in the same unit, ``None`` if the source ran none (the
     #: runner then measures one anyway and the report says so).
-    greedy: Any = None
+    evaluation: Any = None
     #: Linear epsilon schedule the source applied, or ``None`` to hold the agent's
     #: constructed exploration rate fixed.
     epsilon_schedule: Optional[Dict[str, Any]] = None
     #: How many seeds the source itself used, for the report to note.
     source_seeds: int = 1
+    #: Which metric this environment should be *compared* on, overriding the
+    #: report's global choice. ``None`` uses the global one. Whack-a-mole sets
+    #: ``eval_rate``: its runs are 100k-600k time units of permanent epsilon
+    #: exploration, so a lifetime average is dominated by exploration cost rather
+    #: than by the quality of the policy learned.
+    metric: Optional[str] = None
     #: False when this repo chose the budget because the source pins none.
     attributed: bool = True
     #: agent name -> constructor kwargs, from that source. Agents absent from the
@@ -147,7 +153,7 @@ def _tabular(name: str, family: str, config_fn: Callable[..., SMDPConfig],
 
     return EnvSpec(name=name, family=family, build=build, budget=setup["budget"],
                    budget_steps=setup["budget_steps"], source=source,
-                   agent_kwargs=setup["hp"], greedy=setup["greedy"],
+                   agent_kwargs=setup["hp"], evaluation=setup["evaluation"],
                    epsilon_schedule=setup["epsilon_schedule"],
                    source_seeds=setup["source_seeds"],
                    attributed=setup["attributed"], tags=tags)
@@ -163,7 +169,7 @@ def _rate(name: str, cls, note: str = "", **env_defaults: Any) -> EnvSpec:
     return EnvSpec(name=name, family="rates", build=build, note=note,
                    budget=setup["budget"], budget_steps=setup["budget_steps"],
                    source="time_based", agent_kwargs=setup["hp"],
-                   greedy=setup["greedy"],
+                   evaluation=setup["evaluation"],
                    epsilon_schedule=setup["epsilon_schedule"],
                    source_seeds=setup["source_seeds"],
                    attributed=setup["attributed"])
@@ -195,11 +201,11 @@ def _whack_a_mole(kind: str, mole_dynamics: str, reward_mode: str) -> EnvSpec:
     return EnvSpec(name=name, family="whack_a_mole", build=build,
                    budget=setup["budget"], budget_steps=setup["budget_steps"],
                    source="whack_a_mole", agent_kwargs=setup["hp"],
-                   greedy=setup["greedy"],
+                   evaluation=setup["evaluation"],
                    epsilon_schedule=setup["epsilon_schedule"],
                    source_seeds=setup["source_seeds"],
                    attributed=setup["attributed"],
-                   tags=(kind, mole_dynamics, reward_mode),
+                   tags=(kind, mole_dynamics, reward_mode), metric="eval_rate",
                    note=f"3x3 grid, {clock}; {dynamics}; {payout}")
 
 
@@ -214,7 +220,7 @@ def _parse_whack_a_mole(name: str):
 
 
 def _build_registry() -> Dict[str, EnvSpec]:
-    # Budgets, episode lengths, greedy budgets and hyperparameters all come from
+    # Budgets, episode lengths, evaluation budgets and hyperparameters all come from
     # each environment's source repository via `source_settings`. Nothing here is
     # tuned by this repo, and where a source pins no budget the spec is marked
     # unattributed rather than presented as provenance.
@@ -307,7 +313,7 @@ def _build_registry() -> Dict[str, EnvSpec]:
         EnvSpec(name="two_path", family="horizon",
                 build=lambda **kw: TwoPathEnv(**kw),
                 budget_steps=source_settings.PROTOCOL["none"]["budget_steps"],
-                source="none", greedy=source_settings.PROTOCOL["none"]["greedy"],
+                source="none", evaluation=source_settings.PROTOCOL["none"]["evaluation"],
                 attributed=False,
                 note="two 2-step paths, totals 101 versus 100; probes the horizon"),
         # --- reward earned at a rate over a random duration ---
@@ -336,7 +342,7 @@ def _build_registry() -> Dict[str, EnvSpec]:
                 budget_steps=source_settings.PROTOCOL["btc_swarm"]["budget_steps"],
                 source="btc_swarm",
                 agent_kwargs=source_settings.BTC_SWARM,
-                greedy=source_settings.PROTOCOL["btc_swarm"]["greedy"],
+                evaluation=source_settings.PROTOCOL["btc_swarm"]["evaluation"],
                 source_seeds=source_settings.PROTOCOL["btc_swarm"]["seeds"],
                 note="long or short on hourly BTC bars; the holding time is "
                      "derived from the same return that pays the reward"),

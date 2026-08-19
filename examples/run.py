@@ -29,10 +29,15 @@ Three metrics, all reward per unit time:
 ``window_rate``
     The same, over the post-warmup tail only (``--warmup-frac``). Shows the
     learned policy without the early transient.
-``greedy_rate``
-    A separate run on a fresh environment with exploration and learning off.
-    The cleanest read on the quality of the policy that was learned, and the one
-    to quote when the transient is not the question.
+``eval_rate``
+    A separate run on a **fresh environment** with exploration and learning off:
+    the trained agent keeps its policy, the world starts over. Action selection is
+    ``eval`` (argmax) rather than ``act`` (epsilon-greedy), and ``learn`` is never
+    called. The cleanest read on the quality of the policy that was learned, and
+    the one to quote when the transient is not the question. Note the environment
+    is rebuilt, so on a *drifting* environment the policy is measured at the start
+    of the drift, not where training left off -- there ``window_rate`` is the
+    fairer read.
 
 Each result also carries a learning curve — ``(time, cumulative reward, rho)`` at
 ``--curve-points`` checkpoints — which ``make_plots.py`` turns into rate-versus-
@@ -119,8 +124,8 @@ ORACLE = "Oracle"
 #: Fallback time budget for a spec that declares none.
 DEFAULT_BUDGET = 100_000
 #: Greedy-evaluation budget, as a fraction of training, for the sources that ran no
-#: greedy evaluation of their own.
-DEFAULT_GREEDY_FRAC = 0.2
+#: post-training evaluation of their own.
+DEFAULT_EVAL_FRAC = 0.2
 #: Hard cap on decisions, so an environment with tiny holding times cannot spin.
 DEFAULT_MAX_STEPS = 2_000_000
 DEFAULT_RESULTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -274,7 +279,7 @@ def train(agent, env, budget: float, seed: int, warmup_frac: float = 0.5,
     }
 
 
-def greedy(agent, env, budget: float, seed: int,
+def evaluate(agent, env, budget: float, seed: int,
            max_steps: int = DEFAULT_MAX_STEPS,
            unit: str = "time") -> Dict[str, Any]:
     """Rate of the learned policy: a fresh run with no exploration and no learning."""
@@ -300,9 +305,9 @@ def greedy(agent, env, budget: float, seed: int,
         else:
             state = env.state_of(obs)
 
-    return {"greedy_rate": total_reward / clock if clock else 0.0,
-            "greedy_steps": steps,
-            "greedy_illegal_frac": illegal / steps if steps else 0.0}
+    return {"eval_rate": total_reward / clock if clock else 0.0,
+            "eval_steps": steps,
+            "eval_illegal_frac": illegal / steps if steps else 0.0}
 
 
 def probe_choices(agent, env, env_name: str, seed: int) -> Dict[str, Any]:
@@ -339,11 +344,12 @@ def run_job(job: Dict[str, Any]) -> Dict[str, Any]:
                    curve_points=job["curve_points"], max_steps=job["max_steps"],
                    unit=unit, epsilon_schedule=job.get("epsilon_schedule"))
 
-    if job["greedy_budget"] > 0:
-        # A fresh environment and a different seed, so the greedy measurement is
-        # not the training trajectory's continuation.
+    if job["eval_budget"] > 0:
+        # A fresh environment and a different seed, so the evaluation is not the
+        # training trajectory's continuation. The *agent* is not reset: it keeps
+        # the policy it learned; only the world starts over.
         eval_env = make(env_name, **env_kwargs)
-        result.update(greedy(agent, eval_env, budget=job["greedy_budget"],
+        result.update(evaluate(agent, eval_env, budget=job["eval_budget"],
                              seed=seed + 10_000, max_steps=job["max_steps"],
                              unit=unit))
 
@@ -372,13 +378,13 @@ def resolve_budget(spec: EnvSpec, args) -> tuple:
     return float(amount) * args.budget_scale, unit
 
 
-def resolve_greedy(spec: EnvSpec, budget: float, args) -> float:
-    """The greedy-evaluation budget: the source's if it ran one, else a fraction."""
-    if args.no_greedy:
+def resolve_evaluation(spec: EnvSpec, budget: float, args) -> float:
+    """The post-training evaluation budget: the source's if it ran one, else a fraction."""
+    if args.no_eval:
         return 0.0
-    greedy = spec.greedy if args.greedy_frac is None else args.greedy_frac
-    return source_settings.greedy_budget(greedy, budget,
-                                         fallback=DEFAULT_GREEDY_FRAC)
+    greedy = spec.evaluation if args.eval_frac is None else args.eval_frac
+    return source_settings.eval_budget(greedy, budget,
+                                         fallback=DEFAULT_EVAL_FRAC)
 
 
 def build_jobs(env_names: Sequence[str], seeds: Sequence[int], args) -> List[Dict]:
@@ -386,7 +392,7 @@ def build_jobs(env_names: Sequence[str], seeds: Sequence[int], args) -> List[Dic
     for env_name in env_names:
         spec: EnvSpec = ENVS[env_name]
         budget, unit = resolve_budget(spec, args)
-        greedy_budget = resolve_greedy(spec, budget, args)
+        eval_budget = resolve_evaluation(spec, budget, args)
         probe = make(env_name)
         for agent_name in agent_names(probe):
             if args.agents and agent_name not in args.agents:
@@ -399,7 +405,7 @@ def build_jobs(env_names: Sequence[str], seeds: Sequence[int], args) -> List[Dic
                                  warmup_frac=args.warmup_frac,
                                  curve_points=args.curve_points,
                                  max_steps=args.max_steps,
-                                 greedy_budget=greedy_budget))
+                                 eval_budget=eval_budget))
     return jobs
 
 
@@ -416,9 +422,10 @@ def collect(results: Sequence[Dict], env_names: Sequence[str], seeds: Sequence[i
             "note": spec.describe(),
             "budget": budget,
             "budget_unit": unit,
-            "greedy_budget": resolve_greedy(spec, budget, args),
-            "greedy_from_source": spec.greedy is not None and args.greedy_frac is None,
+            "eval_budget": resolve_evaluation(spec, budget, args),
+            "eval_from_source": spec.evaluation is not None and args.eval_frac is None,
             "attributed": spec.attributed,
+            "metric": spec.metric,
             "source_seeds": spec.source_seeds,
             "epsilon_schedule": spec.epsilon_schedule,
             "source": source_settings.PROTOCOL[spec.source]["source"],
@@ -489,12 +496,12 @@ def parse_args(argv: Optional[Sequence[str]] = None):
                         help="hard cap on decisions per run")
     parser.add_argument("--warmup-frac", type=float, default=0.5,
                         help="fraction of the budget excluded from window_rate")
-    parser.add_argument("--greedy-frac", type=float, default=None,
-                        help="override the greedy evaluation budget, as a fraction "
+    parser.add_argument("--eval-frac", type=float, default=None,
+                        help="override the post-training evaluation budget, as a fraction "
                              "of the training one (default: the source's own, or "
-                             f"{DEFAULT_GREEDY_FRAC} where the source ran none)")
-    parser.add_argument("--no-greedy", action="store_true",
-                        help="skip the greedy evaluation run")
+                             f"{DEFAULT_EVAL_FRAC} where the source ran none)")
+    parser.add_argument("--no-eval", action="store_true",
+                        help="skip the post-training evaluation run")
     parser.add_argument("--curve-points", type=int, default=40,
                         help="learning-curve checkpoints per run (0 to disable)")
     parser.add_argument("--jobs", type=int, default=max(1, (os.cpu_count() or 2) - 1),

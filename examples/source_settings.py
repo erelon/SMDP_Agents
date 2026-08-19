@@ -18,7 +18,7 @@ episode length *is* the drift horizon. ``sincoslog`` run as 10 episodes of 1,000
 steps is a different environment from the same config run as one 10,000-step
 trajectory — in the second the sin/log multiplier compounds without ever restarting.
 
-**The greedy-evaluation budget.** One source disabled it, one used 100% of the
+**The post-training evaluation budget.** One source disabled it, one used 100% of the
 training budget, one used a fixed 20,000, one never had one.
 
 **The hyperparameters, per agent per environment.** These differ by two orders of
@@ -52,11 +52,11 @@ Sources
 ``whackAmole/benchmark.py`` + ``results/best_hp.json`` (``whack_a_mole``)
     100k-600k **time units** per configuration from that repo's convergence study,
     30 seeds, ``warmup_frac=0.5``, and per-(configuration, agent) hyperparameters
-    from its own grid search over 3 seeds. Its canonical run *disabled* greedy
-    evaluation, so its reports have no ``greedy_rate``.
+    from its own grid search over 3 seeds. Its canonical run *disabled* the post-training
+    evaluation, so its reports have no ``eval_rate``.
 ``BtcSwarm/default-config.json`` (``btc_swarm``)
     One pass over the price series, 30 seeds, ``lr=0.001, beta=0.1, er=0.2``
-    constant. No warmup and no greedy evaluation.
+    constant. No warmup and no post-training evaluation.
 
 Deviations from the sources, all deliberate and all also noted at the point of use:
 
@@ -240,24 +240,24 @@ UNATTRIBUTED = ("python_project_3_unattributed", "none")
 #: affect the trained agent, but the report marks it as not from the source.
 PROTOCOL: Dict[str, Dict[str, Any]] = {
     "python_project_3_main": {
-        "budget_steps": 10_000, "episode_steps": 1_000, "greedy": None,
+        "budget_steps": 10_000, "episode_steps": 1_000, "evaluation": None,
         "seeds": 1, "hp": _pp3(PP3_MAIN_HP), "epsilon_schedule": None,
         "source": "PythonProject3/main.py (10 episodes x 1,000 steps)",
     },
     "python_project_3_counterexample": {
-        "budget_steps": 1_000_000, "episode_steps": 10_000, "greedy": None,
+        "budget_steps": 1_000_000, "episode_steps": 10_000, "evaluation": None,
         "seeds": 1, "hp": _pp3(PP3_EXPERIMENT_HP), "epsilon_schedule": None,
         "source": "PythonProject3/run_smdp_experiment.py (100 x 10,000 steps)",
     },
     "python_project_3_unattributed": {
         # No source protocol; see the module docstring. 100 episodes of 1,000 steps
         # is the middle of the range git history shows for these configs.
-        "budget_steps": 100_000, "episode_steps": 1_000, "greedy": None,
+        "budget_steps": 100_000, "episode_steps": 1_000, "evaluation": None,
         "seeds": 1, "hp": _pp3(PP3_EXPERIMENT_HP), "epsilon_schedule": None,
         "source": "PythonProject3 (no attributable protocol; budget chosen here)",
     },
     "time_based": {
-        "budget_steps": 1_000, "episode_steps": None, "greedy": 1_000,
+        "budget_steps": 1_000, "episode_steps": None, "evaluation": 1_000,
         "seeds": 30, "hp": TIME_BASED,
         # configs/config.yaml:12-16 — decay_episodes equals episodes, so the run
         # finishes greedy.
@@ -265,18 +265,18 @@ PROTOCOL: Dict[str, Dict[str, Any]] = {
         "source": "TimeBasedAgentsComparer/configs/config.yaml (1,000 decisions)",
     },
     "whack_a_mole": {
-        "budget_steps": None, "episode_steps": None, "greedy": 20_000,
+        "budget_steps": None, "episode_steps": None, "evaluation": 20_000,
         "seeds": 30, "hp": None, "epsilon_schedule": None,
         "source": "whackAmole/benchmark.py + results/best_hp.json",
     },
     "btc_swarm": {
         # One pass over the series; the exact count comes from the data length.
-        "budget_steps": 32_900, "episode_steps": None, "greedy": None,
+        "budget_steps": 32_900, "episode_steps": None, "evaluation": None,
         "seeds": 30, "hp": BTC_SWARM, "epsilon_schedule": None,
         "source": "BtcSwarm/default-config.json (one pass over the series)",
     },
     "none": {
-        "budget_steps": 20_000, "episode_steps": None, "greedy": 0.2,
+        "budget_steps": 20_000, "episode_steps": None, "evaluation": 0.2,
         "seeds": 1, "hp": {}, "epsilon_schedule": None,
         "source": "this repository (no benchmark source)",
     },
@@ -341,7 +341,7 @@ def whack_a_mole_hp(env_name: str) -> Dict[str, Dict[str, Any]]:
 def settings(env_name: str, source: str) -> Dict[str, Any]:
     """The budget, episode cap, greedy budget, hyperparameters and provenance.
 
-    Returns ``budget``, ``budget_steps``, ``episode_steps``, ``greedy``,
+    Returns ``budget``, ``budget_steps``, ``episode_steps``, ``evaluation``,
     ``epsilon_schedule``, ``hp`` (agent name -> kwargs), ``source_seeds`` and
     ``source``. Exactly one of ``budget`` and ``budget_steps`` is set.
     """
@@ -349,7 +349,7 @@ def settings(env_name: str, source: str) -> Dict[str, Any]:
         raise KeyError(f"unknown source {source!r}; known: {', '.join(PROTOCOL)}")
     protocol = PROTOCOL[source]
     common = {"episode_steps": protocol["episode_steps"],
-              "greedy": protocol["greedy"],
+              "evaluation": protocol["evaluation"],
               "epsilon_schedule": protocol["epsilon_schedule"],
               "source_seeds": protocol["seeds"],
               "source": protocol["source"],
@@ -380,17 +380,17 @@ def epsilon_at(schedule: Optional[Dict[str, Any]], progress: float) -> Optional[
     return start + (end - start) * fraction
 
 
-def greedy_budget(greedy: Any, budget: float, fallback: float = 0.2) -> float:
-    """Resolve a ``greedy`` protocol entry against a training budget.
+def eval_budget(evaluation: Any, budget: float, fallback: float = 0.2) -> float:
+    """Resolve an ``evaluation`` protocol entry against a training budget.
 
-    ``None`` (the source ran no greedy evaluation) falls back to ``fallback`` as a
-    fraction of the training budget. A float is a fraction, an int an absolute
-    amount in the budget's own unit.
+    ``None`` (the source ran no post-training evaluation) falls back to
+    ``fallback`` as a fraction of the training budget. A float is a fraction, an
+    int an absolute amount in the budget's own unit.
     """
-    if greedy is None:
+    if evaluation is None:
         return budget * float(fallback)
-    if isinstance(greedy, bool):  # guard: bools are ints in Python
-        raise TypeError("greedy must be a number or None, not a bool")
-    if isinstance(greedy, float):
-        return budget * greedy
-    return float(greedy)
+    if isinstance(evaluation, bool):  # guard: bools are ints in Python
+        raise TypeError("evaluation must be a number or None, not a bool")
+    if isinstance(evaluation, float):
+        return budget * evaluation
+    return float(evaluation)

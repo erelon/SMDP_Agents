@@ -21,7 +21,7 @@ from random import Random
 from examples import make_plots, make_report, run, source_settings
 from examples.envs import ENVS, make
 from examples.run import (AGENTS, ORACLE, agent_names, build_agent, collect,
-                          greedy, parse_args, resolve_budget, resolve_greedy,
+                          evaluate, parse_args, resolve_budget, resolve_evaluation,
                           run_job, safe_eval, train, write)
 
 
@@ -29,7 +29,7 @@ def job(**overrides):
     base = dict(env="gemini", agent="QLearning", seed=1, budget=400.0,
                 budget_unit="time", hp={}, epsilon_schedule=None,
                 warmup_frac=0.5, curve_points=8, max_steps=100_000,
-                greedy_budget=80.0)
+                eval_budget=80.0)
     base.update(overrides)
     return base
 
@@ -168,7 +168,7 @@ class TrainingLoopTests(unittest.TestCase):
         result = train(agent, env, budget=100.0, seed=1, curve_points=0)
         self.assertGreater(result["resets"], 10)
 
-    def test_greedy_evaluation_does_not_learn(self):
+    def test_evaluation_does_not_learn(self):
         env = make("risk")
         agent = build_agent("QLearning", env, seed=1)
         train(agent, env, budget=600.0, seed=1, curve_points=0)
@@ -176,19 +176,19 @@ class TrainingLoopTests(unittest.TestCase):
                             sort_keys=True)
         steps_before = agent.step_count
 
-        result = greedy(agent, make("risk"), budget=600.0, seed=99)
+        result = evaluate(agent, make("risk"), budget=600.0, seed=99)
         after = json.dumps({str(k): v for k, v in agent.q_table.items()},
                            sort_keys=True)
         self.assertEqual(before, after)
         self.assertEqual(agent.step_count, steps_before)
-        self.assertGreater(result["greedy_steps"], 0)
+        self.assertGreater(result["eval_steps"], 0)
 
-    def test_greedy_evaluation_tolerates_unseen_states(self):
+    def test_evaluation_tolerates_unseen_states(self):
         # A fresh agent has an empty table, so every state is unseen.
         env = make("wam_smdp_until_whacked_whack")
         agent = build_agent("QLearning", env, seed=1)
-        result = greedy(agent, env, budget=200.0, seed=1)
-        self.assertGreater(result["greedy_steps"], 0)
+        result = evaluate(agent, env, budget=200.0, seed=1)
+        self.assertGreater(result["eval_steps"], 0)
 
 
 class JobTests(unittest.TestCase):
@@ -196,7 +196,7 @@ class JobTests(unittest.TestCase):
 
     def test_a_job_returns_the_expected_fields(self):
         result = run_job(job())
-        for key in ("lifetime_rate", "window_rate", "greedy_rate", "rho", "steps",
+        for key in ("lifetime_rate", "window_rate", "eval_rate", "rho", "steps",
                     "elapsed", "resets", "illegal_frac", "states", "curve",
                     "env", "agent", "seed", "wallclock"):
             self.assertIn(key, result)
@@ -204,8 +204,8 @@ class JobTests(unittest.TestCase):
                          ("gemini", "QLearning", 1))
 
     def test_skipping_the_greedy_run_omits_its_fields(self):
-        result = run_job(job(greedy_budget=0.0))
-        self.assertNotIn("greedy_rate", result)
+        result = run_job(job(eval_budget=0.0))
+        self.assertNotIn("eval_rate", result)
 
     def test_results_group_by_environment_and_sort_by_seed(self):
         args = parse_args(["--seeds", "2"])
@@ -235,14 +235,14 @@ class JobTests(unittest.TestCase):
 def record(env="demo", family="criterion", agents=None, budget=1000.0,
            seeds=(1, 2, 3)):
     return {"env": env, "family": family, "budget": budget, "seeds": list(seeds),
-            "warmup_frac": 0.5, "greedy_frac": 0.2, "note": "a note",
+            "warmup_frac": 0.5, "eval_frac": 0.2, "note": "a note",
             "agents": agents or {}}
 
 
 def runs(values, key="lifetime_rate", illegal=0.0, rho=1.0, curve=None):
     return [{key: value, "rho": rho, "states": 3, "resets": 0,
              "illegal_frac": illegal, "window_rate": value,
-             "greedy_rate": value, "seed": i + 1,
+             "eval_rate": value, "seed": i + 1,
              "curve": curve or [[1.0, value, rho], [2.0, 2 * value, rho]]}
             for i, value in enumerate(values)]
 
@@ -468,17 +468,17 @@ class SourceSettingsTests(unittest.TestCase):
         # constructed value.
         self.assertAlmostEqual(result["final_exploration_rate"], 0.0, places=3)
 
-    def test_greedy_budgets_come_from_the_source_where_it_ran_one(self):
+    def test_evaluation_budgets_come_from_the_source_where_it_ran_one(self):
         args = parse_args([])
         # whackAmole used a fixed 20,000, not a fraction.
         wam = ENVS["wam_mdp_up_down_whack"]
-        self.assertEqual(resolve_greedy(wam, 600_000.0, args), 20_000.0)
+        self.assertEqual(resolve_evaluation(wam, 600_000.0, args), 20_000.0)
         # TimeBased used eval_steps == episodes, i.e. 100% of training.
-        self.assertEqual(resolve_greedy(ENVS["stateless"], 1_000.0, args), 1_000.0)
+        self.assertEqual(resolve_evaluation(ENVS["stateless"], 1_000.0, args), 1_000.0)
         # PythonProject3 ran none, so the runner's own fraction applies.
-        self.assertEqual(resolve_greedy(ENVS["sincoslog"], 10_000.0, args), 2_000.0)
-        self.assertEqual(resolve_greedy(ENVS["sincoslog"], 10_000.0,
-                                        parse_args(["--no-greedy"])), 0.0)
+        self.assertEqual(resolve_evaluation(ENVS["sincoslog"], 10_000.0, args), 2_000.0)
+        self.assertEqual(resolve_evaluation(ENVS["sincoslog"], 10_000.0,
+                                        parse_args(["--no-eval"])), 0.0)
 
     def test_every_hyperparameter_is_accepted_by_its_agent(self):
         # A typo here would otherwise be silently swallowed by **kwargs.
