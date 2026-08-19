@@ -69,6 +69,32 @@ class ExponentialMovingAverage:
         return self.value
 
 
+class CumulativeAverage:
+    """Running mean of ``value * weight``, with the EMA's call signature.
+
+    The whole-history counterpart of :class:`ExponentialMovingAverage`: a gain of
+    ``1 / n`` instead of a fixed ``beta``, so an estimator written against this
+    interface can be built over either and forget or not accordingly.  There is no
+    zero-initialization bias to remove, so no normalized variant is needed.
+    """
+
+    def __init__(self):
+        self.reset()
+
+    def reset(self) -> None:
+        self.value = 0.0
+        self.count = 0
+
+    def update(self, value: float, weight: float) -> float:
+        value = _require_finite("value", value)
+        weight = _require_finite("weight", weight)
+        self.count += 1
+        # Incremental rather than sum/count: the running form does not lose the
+        # small terms once the totals grow large.
+        self.value += (value * weight - self.value) / self.count
+        return self.value
+
+
 class NormalizedEMA:
     """EMA divided by the EMA of its weights, removing the zero-init bias."""
 
@@ -273,17 +299,22 @@ class CumulativeStepRate(RewardRateEstimator):
 # Harmonic reward-rate estimators
 
 class _SignedHarmonicBranch:
-    """One sign branch of the signed harmonic moving average.
+    """One sign branch of the signed harmonic average.
 
     ``indicator`` is 1.0 when the reward carries this branch's sign, keeping the
-    other sign out of the averages while still decaying this branch every step.
+    other sign out of the averages while still ageing this branch every step.
+
+    ``make_average`` builds the three averaging blocks, so the same branch serves
+    the exponential and the cumulative estimators.  Whatever it returns, the
+    branch's harmonic mean is a ratio of two averages taken the same way, so the
+    normalizer -- ``1 - (1 - beta)**n`` for an EMA, ``1 / n`` for a running mean
+    -- cancels and never has to be tracked.
     """
 
-    def __init__(self, beta: float):
-        self.beta = _require_beta(beta)
-        self.reciprocal = ExponentialMovingAverage(self.beta)
-        self.weighted_occurrence = ExponentialMovingAverage(self.beta)
-        self.occurrence = ExponentialMovingAverage(self.beta)
+    def __init__(self, make_average):
+        self.reciprocal = make_average()
+        self.weighted_occurrence = make_average()
+        self.occurrence = make_average()
 
     def reset(self) -> None:
         self.reciprocal.reset()
@@ -301,8 +332,8 @@ class _SignedHarmonicBranch:
         return harmonic, occurrence
 
 
-class WeightedHarmonicRate(ExponentialRateEstimator):
-    """General signed harmonic moving-average reward-rate estimator.
+class _SignedHarmonicMixing:
+    """The signed harmonic estimator, over whatever averaging blocks it is given.
 
     Each sign is averaged in its own branch -- a harmonic mean across a sign
     change is meaningless -- and the branch rates are mixed by how often each
@@ -310,16 +341,19 @@ class WeightedHarmonicRate(ExponentialRateEstimator):
 
     The duration enters as ``duration / reward``, never as a divisor, so an
     instantaneous transition is well defined: it contributes nothing to the
-    branch's reciprocal average and only decays it.
+    branch's reciprocal average and only ages it.
+
+    Mixed in *before* an estimator base so that ``reset`` and ``_update`` resolve
+    here first and cooperate upward; a subclass calls ``_build_branches`` before
+    delegating to that base, which resets everything.
     """
 
     accepts_zero_duration = True
 
-    def __init__(self, beta: float):
-        self.positive = _SignedHarmonicBranch(beta)
-        self.negative = _SignedHarmonicBranch(beta)
-        self.zero_occurrence = ExponentialMovingAverage(beta)
-        super().__init__(beta)
+    def _build_branches(self, make_average) -> None:
+        self.positive = _SignedHarmonicBranch(make_average)
+        self.negative = _SignedHarmonicBranch(make_average)
+        self.zero_occurrence = make_average()
 
     def reset(self) -> None:
         super().reset()
@@ -343,6 +377,46 @@ class WeightedHarmonicRate(ExponentialRateEstimator):
             positive_rate * positive_occurrence
             + negative_rate * negative_occurrence
         ) / (positive_occurrence + negative_occurrence + zero_occurrence)
+
+
+class WeightedHarmonicRate(_SignedHarmonicMixing, ExponentialRateEstimator):
+    """Signed harmonic *moving*-average reward-rate estimator.
+
+    The forgetting one: every average behind it is an EMA at ``beta``, so the
+    estimate tracks a drifting rate rather than averaging the whole history.
+    """
+
+    def __init__(self, beta: float):
+        self._build_branches(lambda: ExponentialMovingAverage(beta))
+        super().__init__(beta)
+
+
+class CumulativeWeightedHarmonicRate(_SignedHarmonicMixing, RewardRateEstimator):
+    """Signed harmonic average over the whole history, with no forgetting.
+
+    The same estimator as :class:`WeightedHarmonicRate` with running means in
+    place of EMAs -- what ``CumulativeTimeRate`` is to
+    ``ExponentialMovingRatioRate``.  Since each branch is a ratio of two averages
+    taken the same way, the ``1 / n`` cancels and the branch reduces to a ratio of
+    plain sums; the sign indicators partition every step, so the occurrence shares
+    sum to exactly 1 and the mixing denominator is a no-op.
+
+    Two special cases are worth knowing, both of which hold only while no reward
+    is zero:
+
+    * with **unit weight** and all rewards positive it is the harmonic mean of
+      the per-transition rates, ``n / sum(tau_i / r_i)`` -- the third member of
+      the family beside ``CumulativeTimeRate``'s ``sum(r) / sum(tau)`` and
+      ``CumulativeStepRate``'s ``mean(r_i / tau_i)``;
+    * with the **reward as the weight** and all rewards positive the ``r`` in
+      ``(tau / r) * r`` cancels, the branch becomes ``sum(r) / sum(tau)``, and it
+      coincides exactly with :class:`CumulativeTimeRate`.  A negative reward puts
+      the two branches back to work and the two part company again.
+    """
+
+    def __init__(self):
+        self._build_branches(CumulativeAverage)
+        super().__init__()
 
 
 class NormHMA(WeightedHarmonicRate):
