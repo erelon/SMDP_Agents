@@ -26,6 +26,18 @@ class Agent:
             return self.env.get_available_actions(state)
         return self.action_space
 
+    def tabulate(self, table: Dict[Any, Dict[int, float]], state, default: float = 0.0):
+        """Ensure ``table[state]`` has one entry per action available in ``state``.
+
+        Rows are created on first visit and extended if a state later reports an
+        action it did not before, so a table only ever holds actions the
+        environment will actually accept.  Returns the row.
+        """
+        row = table.setdefault(state, {})
+        for action in self.get_available_actions(state):
+            row.setdefault(action, default)
+        return row
+
     def __repr__(self):
         return f"Agent(name={self.name})"
 

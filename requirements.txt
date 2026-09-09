@@ -1,2 +1,8 @@
 numpy
 torch
+
+# examples/ only: the environments are Gymnasium environments, and the runner's
+# reports and plots use these. agents/ itself needs none of them.
+gymnasium
+pandas
+matplotlib

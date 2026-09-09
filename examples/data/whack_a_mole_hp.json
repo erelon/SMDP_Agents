@@ -1,0 +1,542 @@
+{
+  "MDP_until_whacked_whack": {
+    "ContinuesMAB": {
+      "exploration_rate": 0.2
+    },
+    "ContinuosUCB": {
+      "exploration_constant": 0.5
+    },
+    "ContinuousQLearning": {
+      "learning_rate": 0.5,
+      "discount_factor": 0.9,
+      "exploration_rate": 0.1
+    },
+    "ContinuousRLearning": {
+      "learning_rate": 0.1,
+      "rho_learning_rate": 0.1,
+      "exploration_rate": 0.05
+    },
+    "Harmonic": {
+      "learning_rate": 0.2,
+      "rho_learning_rate": 0.1,
+      "exploration_rate": 0.05
+    },
+    "MAB": {
+      "exploration_rate": 0.2
+    },
+    "QLearning": {
+      "learning_rate": 0.5,
+      "discount_factor": 0.9,
+      "exploration_rate": 0.1
+    },
+    "RLearning": {
+      "learning_rate": 0.1,
+      "rho_learning_rate": 0.1,
+      "exploration_rate": 0.05
+    },
+    "RelaxedSMART": {
+      "learning_rate": 0.1,
+      "rho_learning_rate": 0.05,
+      "exploration_rate": 0.05
+    },
+    "SMART": {
+      "learning_rate": 0.1,
+      "rho_learning_rate": 0.01,
+      "exploration_rate": 0.1
+    },
+    "UCB": {
+      "exploration_constant": 0.5
+    },
+    "WeightedHarmonic": {
+      "learning_rate": 0.2,
+      "rho_learning_rate": 0.1,
+      "exploration_rate": 0.05
+    }
+  },
+  "MDP_until_whacked_whack_downed": {
+    "ContinuesMAB": {
+      "exploration_rate": 0.2
+    },
+    "ContinuosUCB": {
+      "exploration_constant": 0.5
+    },
+    "ContinuousQLearning": {
+      "learning_rate": 0.5,
+      "discount_factor": 0.9,
+      "exploration_rate": 0.1
+    },
+    "ContinuousRLearning": {
+      "learning_rate": 0.1,
+      "rho_learning_rate": 0.1,
+      "exploration_rate": 0.05
+    },
+    "Harmonic": {
+      "learning_rate": 0.1,
+      "rho_learning_rate": 0.05,
+      "exploration_rate": 0.05
+    },
+    "MAB": {
+      "exploration_rate": 0.2
+    },
+    "QLearning": {
+      "learning_rate": 0.5,
+      "discount_factor": 0.9,
+      "exploration_rate": 0.1
+    },
+    "RLearning": {
+      "learning_rate": 0.1,
+      "rho_learning_rate": 0.1,
+      "exploration_rate": 0.05
+    },
+    "RelaxedSMART": {
+      "learning_rate": 0.1,
+      "rho_learning_rate": 0.1,
+      "exploration_rate": 0.05
+    },
+    "SMART": {
+      "learning_rate": 0.1,
+      "rho_learning_rate": 0.01,
+      "exploration_rate": 0.1
+    },
+    "UCB": {
+      "exploration_constant": 0.5
+    },
+    "WeightedHarmonic": {
+      "learning_rate": 0.1,
+      "rho_learning_rate": 0.05,
+      "exploration_rate": 0.05
+    }
+  },
+  "MDP_until_whacked_step_downed": {
+    "ContinuesMAB": {
+      "exploration_rate": 0.2
+    },
+    "ContinuosUCB": {
+      "exploration_constant": 0.5
+    },
+    "ContinuousQLearning": {
+      "learning_rate": 0.5,
+      "discount_factor": 0.9,
+      "exploration_rate": 0.1
+    },
+    "ContinuousRLearning": {
+      "learning_rate": 0.1,
+      "rho_learning_rate": 0.3,
+      "exploration_rate": 0.1
+    },
+    "Harmonic": {
+      "learning_rate": 0.1,
+      "rho_learning_rate": 0.05,
+      "exploration_rate": 0.05
+    },
+    "MAB": {
+      "exploration_rate": 0.2
+    },
+    "QLearning": {
+      "learning_rate": 0.5,
+      "discount_factor": 0.9,
+      "exploration_rate": 0.1
+    },
+    "RLearning": {
+      "learning_rate": 0.1,
+      "rho_learning_rate": 0.3,
+      "exploration_rate": 0.1
+    },
+    "RelaxedSMART": {
+      "learning_rate": 0.2,
+      "rho_learning_rate": 0.3,
+      "exploration_rate": 0.05
+    },
+    "SMART": {
+      "learning_rate": 0.2,
+      "rho_learning_rate": 0.01,
+      "exploration_rate": 0.1
+    },
+    "UCB": {
+      "exploration_constant": 1.0
+    },
+    "WeightedHarmonic": {
+      "learning_rate": 0.1,
+      "rho_learning_rate": 0.3,
+      "exploration_rate": 0.05
+    }
+  },
+  "MDP_up_down_whack": {
+    "ContinuesMAB": {
+      "exploration_rate": 0.2
+    },
+    "ContinuosUCB": {
+      "exploration_constant": 0.5
+    },
+    "ContinuousQLearning": {
+      "learning_rate": 0.5,
+      "discount_factor": 0.9,
+      "exploration_rate": 0.1
+    },
+    "ContinuousRLearning": {
+      "learning_rate": 0.1,
+      "rho_learning_rate": 0.05,
+      "exploration_rate": 0.05
+    },
+    "Harmonic": {
+      "learning_rate": 0.2,
+      "rho_learning_rate": 0.05,
+      "exploration_rate": 0.1
+    },
+    "MAB": {
+      "exploration_rate": 0.2
+    },
+    "QLearning": {
+      "learning_rate": 0.5,
+      "discount_factor": 0.9,
+      "exploration_rate": 0.1
+    },
+    "RLearning": {
+      "learning_rate": 0.1,
+      "rho_learning_rate": 0.05,
+      "exploration_rate": 0.05
+    },
+    "RelaxedSMART": {
+      "learning_rate": 0.1,
+      "rho_learning_rate": 0.01,
+      "exploration_rate": 0.05
+    },
+    "SMART": {
+      "learning_rate": 0.1,
+      "rho_learning_rate": 0.01,
+      "exploration_rate": 0.1
+    },
+    "UCB": {
+      "exploration_constant": 0.5
+    },
+    "WeightedHarmonic": {
+      "learning_rate": 0.2,
+      "rho_learning_rate": 0.05,
+      "exploration_rate": 0.1
+    }
+  },
+  "MDP_up_down_whack_downed": {
+    "ContinuesMAB": {
+      "exploration_rate": 0.2
+    },
+    "ContinuosUCB": {
+      "exploration_constant": 0.5
+    },
+    "ContinuousQLearning": {
+      "learning_rate": 0.5,
+      "discount_factor": 0.9,
+      "exploration_rate": 0.1
+    },
+    "ContinuousRLearning": {
+      "learning_rate": 0.1,
+      "rho_learning_rate": 0.05,
+      "exploration_rate": 0.05
+    },
+    "Harmonic": {
+      "learning_rate": 0.1,
+      "rho_learning_rate": 0.01,
+      "exploration_rate": 0.05
+    },
+    "MAB": {
+      "exploration_rate": 0.2
+    },
+    "QLearning": {
+      "learning_rate": 0.5,
+      "discount_factor": 0.9,
+      "exploration_rate": 0.1
+    },
+    "RLearning": {
+      "learning_rate": 0.1,
+      "rho_learning_rate": 0.05,
+      "exploration_rate": 0.05
+    },
+    "RelaxedSMART": {
+      "learning_rate": 0.1,
+      "rho_learning_rate": 0.01,
+      "exploration_rate": 0.05
+    },
+    "SMART": {
+      "learning_rate": 0.1,
+      "rho_learning_rate": 0.01,
+      "exploration_rate": 0.1
+    },
+    "UCB": {
+      "exploration_constant": 0.5
+    },
+    "WeightedHarmonic": {
+      "learning_rate": 0.1,
+      "rho_learning_rate": 0.01,
+      "exploration_rate": 0.05
+    }
+  },
+  "MDP_up_down_step_downed": {
+    "ContinuesMAB": {
+      "exploration_rate": 0.2
+    },
+    "ContinuosUCB": {
+      "exploration_constant": 0.5
+    },
+    "ContinuousQLearning": {
+      "learning_rate": 0.5,
+      "discount_factor": 0.9,
+      "exploration_rate": 0.1
+    },
+    "ContinuousRLearning": {
+      "learning_rate": 0.2,
+      "rho_learning_rate": 0.3,
+      "exploration_rate": 0.05
+    },
+    "Harmonic": {
+      "learning_rate": 0.5,
+      "rho_learning_rate": 0.3,
+      "exploration_rate": 0.1
+    },
+    "MAB": {
+      "exploration_rate": 0.2
+    },
+    "QLearning": {
+      "learning_rate": 0.5,
+      "discount_factor": 0.9,
+      "exploration_rate": 0.1
+    },
+    "RLearning": {
+      "learning_rate": 0.2,
+      "rho_learning_rate": 0.3,
+      "exploration_rate": 0.05
+    },
+    "RelaxedSMART": {
+      "learning_rate": 0.2,
+      "rho_learning_rate": 0.01,
+      "exploration_rate": 0.05
+    },
+    "SMART": {
+      "learning_rate": 0.2,
+      "rho_learning_rate": 0.01,
+      "exploration_rate": 0.05
+    },
+    "UCB": {
+      "exploration_constant": 2.0
+    },
+    "WeightedHarmonic": {
+      "learning_rate": 0.5,
+      "rho_learning_rate": 0.05,
+      "exploration_rate": 0.1
+    }
+  },
+  "SMDP_until_whacked_whack": {
+    "ContinuesMAB": {
+      "exploration_rate": 0.2
+    },
+    "ContinuosUCB": {
+      "exploration_constant": 0.5
+    },
+    "ContinuousQLearning": {
+      "learning_rate": 0.5,
+      "discount_factor": 0.9,
+      "exploration_rate": 0.1
+    },
+    "ContinuousRLearning": {
+      "learning_rate": 0.1,
+      "rho_learning_rate": 0.05,
+      "exploration_rate": 0.05
+    },
+    "Harmonic": {
+      "learning_rate": 0.2,
+      "rho_learning_rate": 0.05,
+      "exploration_rate": 0.05
+    },
+    "MAB": {
+      "exploration_rate": 0.2
+    },
+    "QLearning": {
+      "learning_rate": 0.5,
+      "discount_factor": 0.9,
+      "exploration_rate": 0.1
+    },
+    "RLearning": {
+      "learning_rate": 0.1,
+      "rho_learning_rate": 0.05,
+      "exploration_rate": 0.05
+    },
+    "RelaxedSMART": {
+      "learning_rate": 0.2,
+      "rho_learning_rate": 0.3,
+      "exploration_rate": 0.05
+    },
+    "SMART": {
+      "learning_rate": 0.2,
+      "rho_learning_rate": 0.01,
+      "exploration_rate": 0.05
+    },
+    "UCB": {
+      "exploration_constant": 0.5
+    },
+    "WeightedHarmonic": {
+      "learning_rate": 0.2,
+      "rho_learning_rate": 0.05,
+      "exploration_rate": 0.05
+    }
+  },
+  "SMDP_until_whacked_whack_downed": {
+    "ContinuesMAB": {
+      "exploration_rate": 0.2
+    },
+    "ContinuosUCB": {
+      "exploration_constant": 0.5
+    },
+    "ContinuousQLearning": {
+      "learning_rate": 0.5,
+      "discount_factor": 0.9,
+      "exploration_rate": 0.05
+    },
+    "ContinuousRLearning": {
+      "learning_rate": 0.1,
+      "rho_learning_rate": 0.1,
+      "exploration_rate": 0.05
+    },
+    "Harmonic": {
+      "learning_rate": 0.1,
+      "rho_learning_rate": 0.01,
+      "exploration_rate": 0.05
+    },
+    "MAB": {
+      "exploration_rate": 0.2
+    },
+    "QLearning": {
+      "learning_rate": 0.5,
+      "discount_factor": 0.9,
+      "exploration_rate": 0.1
+    },
+    "RLearning": {
+      "learning_rate": 0.1,
+      "rho_learning_rate": 0.1,
+      "exploration_rate": 0.05
+    },
+    "RelaxedSMART": {
+      "learning_rate": 0.1,
+      "rho_learning_rate": 0.3,
+      "exploration_rate": 0.05
+    },
+    "SMART": {
+      "learning_rate": 0.1,
+      "rho_learning_rate": 0.01,
+      "exploration_rate": 0.05
+    },
+    "UCB": {
+      "exploration_constant": 0.5
+    },
+    "WeightedHarmonic": {
+      "learning_rate": 0.1,
+      "rho_learning_rate": 0.05,
+      "exploration_rate": 0.05
+    }
+  },
+  "SMDP_up_down_whack": {
+    "ContinuesMAB": {
+      "exploration_rate": 0.1
+    },
+    "ContinuosUCB": {
+      "exploration_constant": 0.5
+    },
+    "ContinuousQLearning": {
+      "learning_rate": 0.5,
+      "discount_factor": 0.9,
+      "exploration_rate": 0.1
+    },
+    "ContinuousRLearning": {
+      "learning_rate": 0.1,
+      "rho_learning_rate": 0.05,
+      "exploration_rate": 0.05
+    },
+    "Harmonic": {
+      "learning_rate": 0.2,
+      "rho_learning_rate": 0.05,
+      "exploration_rate": 0.05
+    },
+    "MAB": {
+      "exploration_rate": 0.1
+    },
+    "QLearning": {
+      "learning_rate": 0.5,
+      "discount_factor": 0.9,
+      "exploration_rate": 0.05
+    },
+    "RLearning": {
+      "learning_rate": 0.1,
+      "rho_learning_rate": 0.05,
+      "exploration_rate": 0.05
+    },
+    "RelaxedSMART": {
+      "learning_rate": 0.1,
+      "rho_learning_rate": 0.1,
+      "exploration_rate": 0.05
+    },
+    "SMART": {
+      "learning_rate": 0.1,
+      "rho_learning_rate": 0.01,
+      "exploration_rate": 0.05
+    },
+    "UCB": {
+      "exploration_constant": 0.5
+    },
+    "WeightedHarmonic": {
+      "learning_rate": 0.2,
+      "rho_learning_rate": 0.05,
+      "exploration_rate": 0.05
+    }
+  },
+  "SMDP_up_down_whack_downed": {
+    "ContinuesMAB": {
+      "exploration_rate": 0.2
+    },
+    "ContinuosUCB": {
+      "exploration_constant": 0.5
+    },
+    "ContinuousQLearning": {
+      "learning_rate": 0.5,
+      "discount_factor": 0.9,
+      "exploration_rate": 0.1
+    },
+    "ContinuousRLearning": {
+      "learning_rate": 0.1,
+      "rho_learning_rate": 0.05,
+      "exploration_rate": 0.05
+    },
+    "Harmonic": {
+      "learning_rate": 0.1,
+      "rho_learning_rate": 0.01,
+      "exploration_rate": 0.05
+    },
+    "MAB": {
+      "exploration_rate": 0.2
+    },
+    "QLearning": {
+      "learning_rate": 0.5,
+      "discount_factor": 0.9,
+      "exploration_rate": 0.05
+    },
+    "RLearning": {
+      "learning_rate": 0.1,
+      "rho_learning_rate": 0.05,
+      "exploration_rate": 0.05
+    },
+    "RelaxedSMART": {
+      "learning_rate": 0.1,
+      "rho_learning_rate": 0.1,
+      "exploration_rate": 0.05
+    },
+    "SMART": {
+      "learning_rate": 0.1,
+      "rho_learning_rate": 0.01,
+      "exploration_rate": 0.05
+    },
+    "UCB": {
+      "exploration_constant": 0.5
+    },
+    "WeightedHarmonic": {
+      "learning_rate": 0.1,
+      "rho_learning_rate": 0.01,
+      "exploration_rate": 0.05
+    }
+  }
+}
