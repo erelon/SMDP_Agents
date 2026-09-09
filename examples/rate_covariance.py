@@ -1,6 +1,6 @@
 """Where the reward-rate estimators disagree, and what controls the size of the gap.
 
-Not an environment — a direct probe of the estimators in ``agents/average_rates.py``
+Not an environment — a direct probe of the estimators in ``smdp_agents/average_rates.py``
 on synthetic ``(reward, duration)`` pairs, with no agent and no policy in the way.
 
 The question is when "average reward per unit time" is ambiguous. Two readings
@@ -32,7 +32,7 @@ governing quantity ``Cov(T, R/T) / E[T]`` is reported alongside it.
 
 Ported from ``PythonProject4``, with its private re-implementations of the three
 operators replaced by the library's own estimators — which makes this a
-consistency check on ``agents/average_rates.py`` as well as a demonstration.
+consistency check on ``smdp_agents/average_rates.py`` as well as a demonstration.
 """
 
 from __future__ import annotations
@@ -43,7 +43,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
-from agents.average_rates import (CumulativeStepRate, CumulativeTimeRate,
+from smdp_agents.average_rates import (CumulativeStepRate, CumulativeTimeRate,
                                   ExponentialMovingRatioRate,
                                   WeightedHarmonicRate)
 

@@ -44,7 +44,7 @@ ACTION_B = 1
 #
 # The two terminal states carry a zero-reward self-loop. Nothing ever takes it —
 # ``step`` has already reported ``terminated`` by then and a runner resets — but
-# the agents in ``agents/`` bootstrap unconditionally from ``eval(next_state)``,
+# the agents in ``smdp_agents/`` bootstrap unconditionally from ``eval(next_state)``,
 # so a terminal state needs *some* entry in the Q-table for the final update to
 # be well defined. A single absorbing action worth 0 makes that bootstrap
 # exactly the terminal value it should be.

@@ -35,6 +35,23 @@ class GaussianMLP(nn.Module):
         return mu, self.log_std.expand_as(mu), value
 
 
+class CategoricalMLP(nn.Module):
+    """Discrete actor-critic: a logits MLP over ``n_actions`` plus a state-value MLP.
+
+    The discrete counterpart of :class:`GaussianMLP`. ``forward`` returns ``(logits,
+    value)`` so the value stays the *last* element of the tuple (matching GaussianMLP),
+    letting the shared PPO core read the value position-independently.
+    """
+
+    def __init__(self, obs_dim, n_actions, hidden=(64, 64)):
+        super().__init__()
+        self.logits = mlp(obs_dim, hidden, n_actions)
+        self.v = mlp(obs_dim, hidden, 1)
+
+    def forward(self, obs):
+        return self.logits(obs), self.v(obs).squeeze(-1)
+
+
 def gaussian_logp(action, mu, log_std):
     """Diagonal-Gaussian log-likelihood, summed over action dims."""
     z = (action - mu) / log_std.exp()

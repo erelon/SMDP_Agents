@@ -1,6 +1,6 @@
 import unittest
 
-from agents.random_agent import RandomAgent
+from smdp_agents.random_agent import RandomAgent
 
 
 class RestrictedEnvironment:

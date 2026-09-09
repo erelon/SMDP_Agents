@@ -1,7 +1,7 @@
 import pathlib
 import unittest
 
-from agents.average_rates import (
+from smdp_agents.average_rates import (
     CumulativeStepRate,
     CumulativeTimeRate,
     ExponentialMovingRatioRate,

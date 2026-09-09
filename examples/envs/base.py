@@ -4,7 +4,7 @@ An SMDP environment is an ordinary Gymnasium environment with one addition: the
 action it just executed took a *holding time*, and that time is reported in
 ``info["tau"]``. Everything else — spaces, ``reset``/``step`` signatures,
 seeding — is stock Gymnasium, so these environments drop into any gym-based
-tooling and into the agents in ``agents/`` without an adapter:
+tooling and into the agents in ``smdp_agents/`` without an adapter:
 
     obs, info = env.reset(seed=1)
     s = env.state_of(obs)

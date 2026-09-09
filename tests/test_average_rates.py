@@ -1,7 +1,7 @@
 import math
 import unittest
 
-from agents.average_rates import (
+from smdp_agents.average_rates import (
     CumulativeAverage,
     CumulativeTimeRate,
     CumulativeWeightedHarmonicRate,

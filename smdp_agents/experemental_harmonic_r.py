@@ -1,9 +1,9 @@
 """Experimental harmonic agents whose TD target is divided by ``|rho|``.
 
-The shipped agents in :mod:`agents.harmonic_r` all use R-learning's target,
+The shipped agents in :mod:`smdp_agents.harmonic_r` all use R-learning's target,
 ``r - rho*tau + max_a' Q(s', a')``.  The two here keep everything else about
-:class:`~agents.harmonic_r.WeightedHarmonic` and
-:class:`~agents.harmonic_r.CumulativeWeightedHarmonic` -- the same rho, the same
+:class:`~smdp_agents.harmonic_r.WeightedHarmonic` and
+:class:`~smdp_agents.harmonic_r.CumulativeWeightedHarmonic` -- the same rho, the same
 reward weighting -- and change only that::
 
     (r - rho*tau) / |rho| + max_a' Q(s', a')
@@ -47,7 +47,7 @@ def abs_rho_scaled_advantage(reward, time, rho):
     """``(r - rho*tau) / |rho|``, or the plain residual when ``rho`` is zero.
 
     The formula lives here alone because two places consume it: the tabular
-    ``set_target`` below, and :class:`~agents.ppo.PPO`'s ``rate_residual`` inside
+    ``set_target`` below, and :class:`~smdp_agents.ppo.PPO`'s ``rate_residual`` inside
     the GAE recursion. Works elementwise on torch tensors as well as on floats,
     since ``rho`` is always a Python float.
     """
@@ -80,9 +80,9 @@ class AbsRhoScaledTarget:
 
 
 class ExperimentalWeightedHarmonic(AbsRhoScaledTarget, WeightedHarmonic):
-    """:class:`~agents.harmonic_r.WeightedHarmonic` with the ``|rho|``-scaled target."""
+    """:class:`~smdp_agents.harmonic_r.WeightedHarmonic` with the ``|rho|``-scaled target."""
 
 
 class ExperimentalCumulativeWeightedHarmonic(AbsRhoScaledTarget,
                                              CumulativeWeightedHarmonic):
-    """:class:`~agents.harmonic_r.CumulativeWeightedHarmonic`, same scaled target."""
+    """:class:`~smdp_agents.harmonic_r.CumulativeWeightedHarmonic`, same scaled target."""

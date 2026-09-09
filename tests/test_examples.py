@@ -18,8 +18,9 @@ Three kinds of check:
 import statistics
 import unittest
 
-from agents.average_rates import (CumulativeTimeRate, ExponentialMovingRatioRate,
-                                  NormalizedExponentialMovingTimeRate)
+from smdp_agents.average_rates import (CumulativeTimeRate,
+                                       ExponentialMovingRatioRate,
+                                       NormalizedExponentialMovingTimeRate)
 from examples.envs import (ENVS, FAMILIES, check_smdp_env,
                            heuristic_policy, make)
 from examples.envs.base import EnvContractError, SMDPEnv
