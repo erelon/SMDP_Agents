@@ -12,7 +12,7 @@ class PackageImportTests(unittest.TestCase):
         # import cycle or ordering bug that the already-populated test
         # interpreter would hide.
         result = subprocess.run(
-            [sys.executable, "-c", "import agents; print(agents.__all__)"],
+            [sys.executable, "-c", "import smdp_agents; print(smdp_agents.__all__)"],
             cwd=ROOT, text=True, capture_output=True
         )
         self.assertEqual(result.returncode, 0, result.stderr)

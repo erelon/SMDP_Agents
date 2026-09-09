@@ -24,6 +24,16 @@ aggregate the batch (mean / sum -> one O(1) call), Harmonic iterates per
 transition. ``time`` is the per-step dwell (1.0 = MDP, macro-step duration =
 SMDP). Defaults match this project's configuration.
 
+``time`` enters the GAE recursion twice: through the ``- rho*tau`` correction
+(see ``rate_residual``) and through the SMDP discount ``gamma^tau``, which
+replaces the flat ``gamma`` so a macro-step is discounted as the ``tau``
+primitive steps it stands in for. Both reduce to the MDP case at ``tau == 1``,
+and ``gamma^tau == 1`` for the average-reward variants (``discount=1.0``).
+
+Either actor head works: the default is a diagonal Gaussian; ``discrete=True``
+swaps in a categorical over ``act_dim`` options. Only sampling, log-prob and
+entropy differ — the rho, GAE and surrogate machinery is shared.
+
 You provide the env loop; the agents are env-agnostic (torch + numpy):
 
     agent = RsmartPPO(obs_dim, act_dim)
@@ -309,7 +319,7 @@ class SmoothedSmartPPO(PPO, SmoothedSMART):
 class ExperimentalWeightedHarmonicPPO(PPO, ExperimentalWeightedHarmonic):
     """``WeightedHarmonic``'s rho with the TD correction divided by ``|rho|``.
 
-    The deep counterpart of :class:`~agents.experemental_harmonic_r.\
+    The deep counterpart of :class:`~smdp_agents.experemental_harmonic_r.\
 ExperimentalWeightedHarmonic`. Still experimental — see that module for what the
     scaling does and does not buy.
     """

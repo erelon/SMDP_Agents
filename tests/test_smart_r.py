@@ -1,8 +1,8 @@
 import math
 import unittest
 
-from agents.average_rates import NormalizedEMA
-from agents.smart_r import SMART, SmoothedSMART
+from smdp_agents.average_rates import NormalizedEMA
+from smdp_agents.smart_r import SMART, SmoothedSMART
 
 
 class SmartTests(unittest.TestCase):

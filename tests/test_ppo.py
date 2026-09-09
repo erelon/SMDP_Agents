@@ -3,9 +3,9 @@ import unittest
 
 import torch
 
-from agents.average_rates import (NormalizedExponentialMovingTimeRate,
+from smdp_agents.average_rates import (NormalizedExponentialMovingTimeRate,
                                   WeightedHarmonicRate)
-from agents.ppo import (PPO, ExperimentalWeightedHarmonicPPO, HarmonicPPO,
+from smdp_agents.ppo import (PPO, ExperimentalWeightedHarmonicPPO, HarmonicPPO,
                         RolloutBuffer, RsmartPPO, SmartPPO, SmoothedSmartPPO)
 
 

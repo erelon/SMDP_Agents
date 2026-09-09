@@ -13,6 +13,15 @@ dependencies = [
     "torch",
 ]
 
+[project.optional-dependencies]
+# examples/ only: the environments are Gymnasium environments, and the runner's
+# reports and plots use these. smdp_agents/ itself needs none of them.
+examples = ["gymnasium", "pandas", "matplotlib"]
+
 [tool.setuptools]
-# Flat layout: the importable package lives in ./agents (import as `agents`).
-packages = ["agents"]
+# Flat layout: the importable package lives in ./smdp_agents. The distribution
+# name is `smdp-agents` and the import name `smdp_agents` — deliberately not the
+# bare `agents`, which collides with other installed packages (openai-agents
+# ships a top-level `agents` module) when this is installed into a shared
+# environment such as Isaac Lab's.
+packages = ["smdp_agents"]

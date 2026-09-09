@@ -1,16 +1,16 @@
 import unittest
 
-from agents.average_rates import (
+from smdp_agents.average_rates import (
     CumulativeTimeRate,
     CumulativeWeightedHarmonicRate,
     ExponentialMovingAverage,
     NormalizedEMA,
     WeightedHarmonicRate,
 )
-from agents.r_learning import ContinuousRLearning
-from agents.harmonic_r import (CumulativeHarmonic, CumulativeWeightedHarmonic,
+from smdp_agents.r_learning import ContinuousRLearning
+from smdp_agents.harmonic_r import (CumulativeHarmonic, CumulativeWeightedHarmonic,
                                Harmonic, WeightedHarmonic)
-from agents.smart_r import SMART
+from smdp_agents.smart_r import SMART
 
 
 def reference_harmonic(sequence, beta, weighted):
@@ -266,7 +266,7 @@ class HarmonicTests(unittest.TestCase):
 class HarmonicTargetTests(unittest.TestCase):
     """Every shipped harmonic agent uses R-learning's plain target.
 
-    The divided variant lives in ``agents/experemental_harmonic_r.py`` and is
+    The divided variant lives in ``smdp_agents/experemental_harmonic_r.py`` and is
     covered by its own tests; these guard that none of it leaks back in here.
     """
 

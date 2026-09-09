@@ -3,7 +3,7 @@ import unittest
 
 import torch
 
-from agents.gaussian_mlp import GaussianMLP, gaussian_entropy, gaussian_logp
+from smdp_agents.gaussian_mlp import GaussianMLP, gaussian_entropy, gaussian_logp
 
 
 class GaussianMLPTests(unittest.TestCase):

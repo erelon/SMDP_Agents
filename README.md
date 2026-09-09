@@ -7,14 +7,22 @@ A modular reinforcement learning library supporting tabular, bandit, deep Q-lear
 ## Installation
 
 ```bash
-pip install -r requirements.txt   # numpy, torch + gymnasium, pandas, matplotlib
+pip install -e .                  # the library: numpy, torch
+pip install -e ".[examples]"      # + gymnasium, pandas, matplotlib for examples/
+pip install -r requirements.txt   # equivalent, without installing the package
 ```
 
-`import agents` pulls in the deep agents, so **torch is required even to use the tabular ones**, and to run the test suite. The one exception is `rate_comparison.py`, a standalone CLI that loads `agents/average_rates.py` by path so it stays dependency-free.
+The distribution is `smdp-agents` and the import name is `smdp_agents`. Both are
+deliberately not the bare `agents`: that is a common top-level module name — the
+`openai-agents` package ships one — and installing this library into a shared
+environment (Isaac Lab's, say) under that name would silently shadow or be
+shadowed by it.
+
+`import smdp_agents` pulls in the deep agents, so **torch is required even to use the tabular ones**, and to run the test suite. The one exception is `rate_comparison.py`, a standalone CLI that loads `smdp_agents/average_rates.py` by path so it stays dependency-free.
 
 `gymnasium`, `pandas` and `matplotlib` are needed only by `examples/` — the
 environments are Gymnasium environments, `btc_market` reads a CSV, and the plots
-are matplotlib. Nothing in `agents/` imports any of them.
+are matplotlib. Nothing in `smdp_agents/` imports any of them.
 
 ---
 
@@ -25,7 +33,7 @@ are matplotlib. Nothing in `agents/` imports any of them.
 Every agent requires a `name` and an `action_space` (a list of valid actions). Optional hyperparameters vary by algorithm.
 
 ```python
-from agents import QLearning, RLearning, SMART, UCB, DeepQWrapper
+from smdp_agents import QLearning, RLearning, SMART, UCB, DeepQWrapper
 
 agent = QLearning(
     name="my_agent",
@@ -83,7 +91,7 @@ Wrap any `ContinuousQLearning`-derived agent with a neural network. The wrapped 
 
 ```python
 import torch.nn as nn
-from agents import SMART, DeepQWrapper
+from smdp_agents import SMART, DeepQWrapper
 
 base = SMART(name="smart", action_space=[0, 1, 2], learning_rate=0.001)
 
@@ -107,7 +115,7 @@ agent = DeepQWrapper(
 The PPO agents are env-agnostic (torch + numpy); you provide the rollout loop. Each average-reward variant reuses a tabular agent's `calc_new_rho` through multiple inheritance, so the rate logic lives in exactly one place.
 
 ```python
-from agents import RsmartPPO, RolloutBuffer
+from smdp_agents import RsmartPPO, RolloutBuffer
 
 agent = RsmartPPO(obs_dim, act_dim)
 buf = RolloutBuffer()
@@ -122,7 +130,15 @@ for itr in range(n_itr):
     stats = agent.update(buf, agent.value(obs))      # bootstrap from the final obs
 ```
 
-`buf.add(..., time=)` is the per-step dwell (`1.0` for an MDP, the macro-step duration for an SMDP). Adding a variant is one line — inherit the deep core plus a tabular rate agent, and pick how a batch feeds the rate updater via `rho_reduce` (`"mean"`, `"sum"`, or `"none"` for per-transition):
+`buf.add(..., time=)` is the per-step dwell (`1.0` for an MDP, the macro-step duration for an SMDP). It feeds the GAE recursion twice: through the `- \rho\tau` rate correction, and through the SMDP discount `\gamma^\tau`, which replaces the flat `\gamma` so that a macro-step of duration `\tau` is discounted as the `\tau` primitive steps it stands in for. For a discounted agent on variable-duration steps this is a real change — with `\gamma = 0.99` a `\tau = 50` option now carries `0.605` rather than `0.99`. Average-reward variants default to `discount=1.0`, where `\gamma^\tau = 1` and the holding time enters only through `rate_residual`.
+
+Pass `discrete=True` for a categorical actor over `act_dim` options instead of the default diagonal-Gaussian one; `act()` then returns `int64` option indices and `eval_act()` the argmax. Everything else — the rate machinery, GAE, the clipped surrogate — is distribution-agnostic and shared.
+
+```python
+agent = RsmartPPO(obs_dim, n_options, discrete=True)
+```
+
+Adding a variant is one line — inherit the deep core plus a tabular rate agent, and pick how a batch feeds the rate updater via `rho_reduce` (`"mean"`, `"sum"`, or `"none"` for per-transition):
 
 ```python
 class WeightedHarmonicPPO(PPO, WeightedHarmonic):
@@ -177,7 +193,7 @@ steps   = agent.step_count                  # learn() calls since construction/r
 
 ### Reward-rate estimators
 
-`agents/average_rates.py` holds the averaging primitives the rate-based agents are built from. It has no dependencies beyond the standard library, so it can be imported on its own.
+`smdp_agents/average_rates.py` holds the averaging primitives the rate-based agents are built from. It has no dependencies beyond the standard library, so it can be imported on its own.
 
 | Class | Estimate |
 |---|---|
@@ -251,7 +267,7 @@ where $p_+, p_-, p_0$ are exponential averages of the sign indicators and the we
 
 All four use R-learning's plain $r - \rho\tau$ target; only $\rho$ differs between them.
 
-**Experimental: the $|\rho|$-scaled target.** `agents/experemental_harmonic_r.py` holds `ExperimentalWeightedHarmonic` and `ExperimentalCumulativeWeightedHarmonic`, identical to the two reward-weighted agents except that the advantage is divided by $|\rho|$:
+**Experimental: the $|\rho|$-scaled target.** `smdp_agents/experemental_harmonic_r.py` holds `ExperimentalWeightedHarmonic` and `ExperimentalCumulativeWeightedHarmonic`, identical to the two reward-weighted agents except that the advantage is divided by $|\rho|$:
 
 $$Q(s,a) \leftarrow Q(s,a) + \alpha\left[\frac{r - \rho\,\tau}{|\rho|} + \max_{a'} Q(s',a') - Q(s,a)\right]$$
 
@@ -342,7 +358,7 @@ python -m unittest -v tests.test_r_learning.RLearningTests
 python -m unittest discover -s tests          # full suite, standard output
 ```
 
-Each `tests/test_*.py` module covers the `agents/` module it is named after, and imports it directly — the suite requires torch, so nothing is skipped or conditionally loaded.
+Each `tests/test_*.py` module covers the `smdp_agents/` module it is named after, and imports it directly — the suite requires torch, so nothing is skipped or conditionally loaded.
 
 For line coverage, if `coverage.py` is installed:
 

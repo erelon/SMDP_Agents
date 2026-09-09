@@ -75,7 +75,7 @@ for _threads in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS",
                  "NUMEXPR_NUM_THREADS"):
     os.environ.setdefault(_threads, "1")
 
-from agents import (SMART, UCB, ContinuosUCB,  # noqa: E402
+from smdp_agents import (SMART, UCB, ContinuosUCB,  # noqa: E402
                     ContinuousEpsilonGreedyMAB, ContinuousQLearning,
                     ContinuousRLearning, CumulativeHarmonic,
                     CumulativeWeightedHarmonic, EpsilonGreedyMAB,
@@ -88,7 +88,7 @@ try:  # belt and braces: fork inherits an already-initialised pool
     import torch
 
     torch.set_num_threads(1)
-except ImportError:  # pragma: no cover - torch is a hard dependency of agents/
+except ImportError:  # pragma: no cover - torch is a hard dependency of smdp_agents/
     pass
 
 from . import correct_actions, source_settings
@@ -550,7 +550,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     return 0
 
 
-#: Start methods to try, in order. **Never ``fork``**: ``import agents`` pulls in
+#: Start methods to try, in order. **Never ``fork``**: ``import smdp_agents`` pulls in
 #: torch, and forking a process that has torch loaded leaves the children in a state
 #: where they run several times slower than the same work in a standalone process —
 #: measured at 4.3x with only four workers, and it gets worse as workers are added.

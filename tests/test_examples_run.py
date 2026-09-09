@@ -561,7 +561,7 @@ class WorkerPoolTests(unittest.TestCase):
     """Workers must not be forked from a torch-loaded parent."""
 
     def test_the_worker_context_is_never_fork(self):
-        # Forking after `import agents` (which imports torch) leaves the children
+        # Forking after `import smdp_agents` (which imports torch) leaves the children
         # running several times slower than the same job standalone — 4.3x with
         # four workers, worse with more.
         self.assertNotIn("fork", run.START_METHODS)

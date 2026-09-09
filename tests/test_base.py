@@ -1,6 +1,6 @@
 import unittest
 
-from agents.base import Agent
+from smdp_agents.base import Agent
 
 
 class DummyAgent(Agent):

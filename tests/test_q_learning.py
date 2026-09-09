@@ -1,6 +1,6 @@
 import unittest
 
-from agents.q_learning import ContinuousQLearning, QLearning
+from smdp_agents.q_learning import ContinuousQLearning, QLearning
 
 
 class QLearningTests(unittest.TestCase):

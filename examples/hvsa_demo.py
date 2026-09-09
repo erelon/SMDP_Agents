@@ -15,7 +15,7 @@ Run with ``python -m examples.hvsa_demo``. Moved from ``hvsa.py`` at the
 repository root.
 """
 
-from agents import Harmonic, QLearning
+from smdp_agents import Harmonic, QLearning
 
 from .envs.two_path import ACTION_A, ACTION_B, STATE0, TwoPathEnv
 
