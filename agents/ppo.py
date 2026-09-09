@@ -41,9 +41,11 @@ You provide the env loop; the agents are env-agnostic (torch + numpy):
 import numpy as np
 import torch
 from torch import optim
+from torch.distributions import Categorical
 
 from .base import Agent
-from .gaussian_mlp import GaussianMLP, gaussian_entropy, gaussian_logp
+from .gaussian_mlp import (CategoricalMLP, GaussianMLP, gaussian_entropy,
+                           gaussian_logp)
 from .experemental_harmonic_r import (ExperimentalWeightedHarmonic,
                                       abs_rho_scaled_advantage)
 from .harmonic_r import Harmonic
@@ -102,7 +104,7 @@ class PPO(Agent):
                  value_loss_coeff=1.0, entropy_loss_coeff=0.01, clip_grad_norm=10.0,
                  discount=None, gae_lambda=0.95, epochs=10, minibatches=20,
                  ratio_clip=0.2, normalize_advantage=False, bootstrap_timelimit=True,
-                 batch_T=200, device="cpu", seed=None):
+                 batch_T=200, device="cpu", seed=None, discrete=False):
         # Initialise the inherited (tabular) rho machinery — calc_new_rho, the
         # per-variant accumulators and self.rho. For plain PPO this just runs
         # Agent.__init__. action_space is unused by the deep agents (placeholder
@@ -113,7 +115,14 @@ class PPO(Agent):
         if seed is not None:
             torch.manual_seed(seed)
         self.device = device
-        self.net = GaussianMLP(obs_dim, act_dim, hidden, init_log_std).to(device)
+        # Continuous (Gaussian) actor by default; ``discrete`` swaps in a categorical
+        # actor over ``act_dim`` options. The rho / GAE / update machinery below is
+        # distribution-agnostic — only the actor head and (logp, entropy, sampling) differ.
+        self.discrete = discrete
+        if discrete:
+            self.net = CategoricalMLP(obs_dim, act_dim, hidden).to(device)
+        else:
+            self.net = GaussianMLP(obs_dim, act_dim, hidden, init_log_std).to(device)
         self.optimizer = optim.Adam(self.net.parameters(), lr=learning_rate, foreach=True)
         # Average-reward variants default to no discounting; plain PPO to 0.99.
         self.discount = (1.0 if self.longrun else 0.99) if discount is None else discount
@@ -136,19 +145,30 @@ class PPO(Agent):
     # --- acting -------------------------------------------------------------
     @torch.no_grad()
     def act(self, obs):
-        """Sample an action. Returns (action, value, logp) as cpu tensors."""
+        """Sample an action. Returns (action, value, logp) as cpu tensors.
+
+        Discrete: ``action`` is a long tensor of option indices. Continuous: a float
+        action tensor."""
+        if self.discrete:
+            logits, value = self.net(_t(obs, self.device))
+            dist = Categorical(logits=logits)
+            action = dist.sample()
+            return action.cpu(), value.cpu(), dist.log_prob(action).cpu()
         mu, log_std, value = self.net(_t(obs, self.device))
         action = mu + log_std.exp() * torch.randn_like(mu)
         return action.cpu(), value.cpu(), gaussian_logp(action, mu, log_std).cpu()
 
     @torch.no_grad()
     def eval_act(self, obs):
-        """Deterministic (mean) action for evaluation."""
+        """Deterministic action for evaluation (argmax logits / mean)."""
+        if self.discrete:
+            return self.net(_t(obs, self.device))[0].argmax(-1).cpu()
         return self.net(_t(obs, self.device))[0].cpu()
 
     @torch.no_grad()
     def value(self, obs):
-        return self.net(_t(obs, self.device))[2].cpu()
+        # value is the last tuple element for both actor heads.
+        return self.net(_t(obs, self.device))[-1].cpu()
 
     # --- average-reward rate (delegated to the inherited tabular calc_new_rho)
     #
@@ -192,9 +212,14 @@ class PPO(Agent):
         adv = torch.zeros_like(reward)
         nxt, gae = bootstrap_value, 0.0
         for t in reversed(range(reward.shape[0])):
+            # SMDP discount over the option's holding time: gamma^tau. Reduces to
+            # the plain MDP discount when tau == 1, and to 1 for the average-reward
+            # variants (discount == 1), where the holding time enters through
+            # ``rate_residual``'s -rho*tau term instead.
+            disc = self.discount ** time[t]
             delta = (self.rate_residual(reward[t], time[t])
-                     + self.discount * nxt * nd[t] - value[t])
-            gae = delta + self.discount * self.gae_lambda * nd[t] * gae
+                     + disc * nxt * nd[t] - value[t])
+            gae = delta + disc * self.gae_lambda * nd[t] * gae
             adv[t] = gae
             nxt = value[t]
         return adv, adv + value
@@ -215,20 +240,27 @@ class PPO(Agent):
             adv = (adv - adv[m].mean()) / (adv[m].std() + 1e-6)
 
         obs = b["obs"].reshape(-1, b["obs"].shape[-1])
-        act = b["act"].reshape(-1, b["act"].shape[-1])
+        # discrete: action is a scalar option index per transition; continuous: a vector.
+        act = b["act"].reshape(-1).long() if self.discrete else b["act"].reshape(-1, b["act"].shape[-1])
         old_logp, adv, ret, valid = (x.reshape(-1) for x in (b["logp"], adv, ret, valid))
         n = obs.shape[0]
         mb = max(1, n // self.minibatches)
         stats = {"loss": [], "grad_norm": [], "entropy": []}
         for _ in range(self.epochs):
             for idx in torch.randperm(n, device=self.device).split(mb):
-                mu, log_std, v = self.net(obs[idx])
-                ratio = torch.exp(gaussian_logp(act[idx], mu, log_std) - old_logp[idx])
+                if self.discrete:
+                    logits, v = self.net(obs[idx])
+                    dist = Categorical(logits=logits)
+                    new_logp, ent = dist.log_prob(act[idx]), dist.entropy()
+                else:
+                    mu, log_std, v = self.net(obs[idx])
+                    new_logp, ent = gaussian_logp(act[idx], mu, log_std), gaussian_entropy(log_std)
+                ratio = torch.exp(new_logp - old_logp[idx])
                 clipped = torch.clamp(ratio, 1 - self.ratio_clip, 1 + self.ratio_clip)
                 w = valid[idx]
                 pi_loss = -_vmean(torch.min(ratio * adv[idx], clipped * adv[idx]), w)
                 v_loss = self.value_loss_coeff * _vmean(0.5 * (v - ret[idx]) ** 2, w)
-                entropy = _vmean(gaussian_entropy(log_std), w)
+                entropy = _vmean(ent, w)
                 loss = pi_loss + v_loss - self.entropy_loss_coeff * entropy
 
                 self.optimizer.zero_grad()
