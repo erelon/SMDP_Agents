@@ -347,6 +347,30 @@ python -m examples.make_report              # -> examples/results/REPORT.md
 python -m examples.make_plots               # -> examples/results/plots/*.png
 ```
 
+### MuJoCo locomotion as an SMDP
+
+`examples/envs/mujoco_smdp.py` has Swimmer and Ant with a macro-step interface:
+the action is a joint-angle TARGET, the simulation runs until the joint reaches
+it, and the number of physics frames that took is the holding time, returned in
+`info["tau"]`. A small move finishes in a frame or two, a large one takes tens,
+so holding time varies with the action — which is what separates reward per unit
+time from reward per decision.
+
+```python
+from examples.envs.mujoco_smdp import make_swimmer, make_ant
+
+env = make_swimmer()                 # continuing: never terminates, no time limit
+obs, _ = env.reset(seed=0)
+obs, reward, terminated, truncated, info = env.step(action)
+tau = info["tau"]                    # physics frames this decision consumed
+```
+
+Needs `gymnasium[mujoco]`, which is an OPTIONAL requirement: this module is not
+imported by `examples/envs/__init__.py`, so the rest of the library works
+without it. Ant can terminate and Swimmer cannot — compare agents on a
+discount-free quantity when an environment can end.
+
+
 An environment there is a Gymnasium environment that reports the holding time of
 each action in `info["tau"]`, plus `state_of(obs)` for a hashable state,
 `get_available_actions(state)` for legality, and `secret()` where the optimal policy

@@ -77,16 +77,28 @@ that live in the experiment repo, not here.
 
 | paper figure | environment | reproducible here |
 |---|---|---|
-| episodic vs continuing training (Swimmer) | Swimmer SMDP | **no** — env not in this repo |
-| A-centering (Swimmer, Ant) | Swimmer / Ant SMDP | **no** — env not in this repo |
-| A-centering + pressure (Swimmer, Ant) | Swimmer / Ant SMDP | **no** — env not in this repo |
-| PPO with/without calibrated pressure (Swimmer) | Swimmer SMDP | **no** — env not in this repo |
-| MDP vs SMDP, sample efficiency (Swimmer) | Swimmer SMDP | **no** — env not in this repo |
+| episodic vs continuing training (Swimmer) | `examples/envs/mujoco_smdp.py` | **algorithm and env yes, numbers no** |
+| A-centering (Swimmer, Ant) | `examples/envs/mujoco_smdp.py` | **algorithm and env yes, numbers no** |
+| A-centering + pressure (Swimmer, Ant) | `examples/envs/mujoco_smdp.py` | **algorithm and env yes, numbers no** |
+| PPO with/without calibrated pressure (Swimmer) | `examples/envs/mujoco_smdp.py` | **algorithm and env yes, numbers no** |
+| MDP vs SMDP, sample efficiency (Swimmer) | `examples/envs/mujoco_smdp.py` | **algorithm and env yes, numbers no** |
 | Whack-a-Mole champions | `examples/envs/kinova_wam.py` | **algorithm yes, numbers no** — the env is here; the hyperparameter sweep that selected the champions is not |
 | Whack-a-Mole deep vs tabular | `examples/envs/kinova_wam.py` | **yes in principle** — both agent families and the env are here |
 
-To reproduce a MuJoCo figure, this library needs an environment that exposes the
-holding time in `info` and a rollout loop; the agents themselves are env-agnostic.
+"Numbers no" everywhere above means the same thing and it is worth being precise
+about it: every figure plots the median over 30 seeds of a CHAMPION
+configuration, and those champions were chosen by a hyperparameter sweep that is
+not in this repo. The algorithm, the environments and the training loop are all
+here, so the experiments can be run — but reproducing a specific curve means
+re-running the search, and `entropy_pressure` in particular is environment-
+specific and was searched per environment.
+
+The two locomotion environments are a faithful port, not a reimplementation: the
+hold wrapper, the effort cost and both forked XMLs are the ones used for the
+published runs. Measured after porting, under random actions: Ant's mean holding
+time is 15.2 frames against the 14-16 of the original runs, and Swimmer's rises
+monotonically with the commanded distance, which is the property the SMDP
+formulation turns on.
 
 ## 5. Resolved while extracting
 

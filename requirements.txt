@@ -6,3 +6,8 @@ torch
 gymnasium
 pandas
 matplotlib
+
+# Optional: only for examples/envs/mujoco_smdp.py (Swimmer and Ant as SMDPs).
+# Nothing else in the repo imports it, and that module is not imported by
+# examples/envs/__init__.py, so leaving it out costs you only those two envs.
+# gymnasium[mujoco]

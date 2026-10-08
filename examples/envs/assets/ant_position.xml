@@ -1,0 +1,254 @@
+<!--
+  Ant-v5 with position (joint-angle) actuators instead of the default torque
+  (motor) actuators. Forked from gymnasium/envs/mujoco/assets/ant.xml: the file
+  is copied VERBATIM and only the <actuator> block is replaced. Companion to
+  swimmer_position.xml / hopper_position.xml for the angle-SMDP study, on Ant.
+
+  Action semantics:
+    Each ctrl[i] is a TARGET joint angle in RADIANS (MuJoCo's internal unit,
+    even though this XML declares joint `range` in DEGREES via
+    compiler angle="degree" -- `ctrlrange` is NOT converted by that setting, so
+    the numbers below are those degree ranges converted by hand). gear=1, so
+    target = ctrl. smdp_make's rescale_action wraps the env in
+    gym.wrappers.RescaleAction so the policy's outward action space stays the
+    standard [-1, 1] and maps LINEARLY onto each joint's ctrlrange.
+
+  PD law applied by MuJoCo each physics step (position actuator):
+    force = kp * (ctrl - qpos) - kv * qvel
+    joint_torque = gear * force            (gear=1 here, so torque = force)
+
+  ------------------------------------------------------------------ 1. RANGES
+  ctrlrange == THAT JOINT'S OWN `range`, per joint, in radians. Ant's actuated
+  joints are NOT all symmetric -- the four hips are +/-30 deg but the four
+  ankles are one-sided:
+
+      hip_1..hip_4     range -30..30 deg  ->  ctrlrange -0.52359878  0.52359878
+      ankle_1, ankle_4 range  30..70 deg  ->  ctrlrange  0.52359878  1.22173048
+      ankle_2, ankle_3 range -70..-30 deg ->  ctrlrange -1.22173048 -0.52359878
+
+  A symmetric-about-0 ctrlrange (the pattern in swimmer_position.xml, whose
+  joint range IS symmetric) is exactly the bug that invalidated a 4940-run
+  Hopper sweep (CLAUDE.md 18.13): with rescale_action the policy's [-1,1] maps
+  linearly onto ctrlrange, so any ctrlrange wider than the joint range spends
+  action space on physically unreachable targets that jam the joint against its
+  limit with a permanent error. For the ankles here 0 rad is not even INSIDE
+  the range, so a symmetric [-1.22, 1.22] would have made ~57% of each ankle
+  axis unreachable. Verified after loading: for every actuator a,
+  model.actuator_ctrlrange[a] == model.jnt_range[actuator_trnid[a,0]] exactly,
+  and the measured unreachable fraction of the [-1,1]^8 action space is 0.
+
+  ---------------------------------- 2. ACTUATOR ORDER (an Ant-SPECIFIC trap,
+  absent from the swimmer/hopper forks)
+  The stock ant.xml lists its motors as
+      hip_4, ankle_4, hip_1, ankle_1, hip_2, ankle_2, hip_3, ankle_3
+  i.e. ROTATED by 6 relative to the joint DEFINITION order, which is what qpos
+  is ordered by (qpos[7:15] = hip_1, ankle_1, hip_2, ankle_2, hip_3, ankle_3,
+  hip_4, ankle_4). HoldUntilTargetReached ends a macro-step by comparing the
+  actuated joints' qpos against `action / gear` ELEMENTWISE. It now resolves
+  those indices from the model (actuator_trnid -> jnt_qposadr), so any ordering
+  is handled; but its historical form was a hardcoded trailing slice
+  `data.qpos[-n_act:]`, which is still the fallback when a model exposes no
+  transmission table, and which is correct only when actuator i drives the joint
+  at qpos[-n_act + i]. Under the STOCK ant ordering that slice is misaligned by
+  6 and the stop criterion tests the wrong joints.
+  This fork therefore lists the eight position actuators in JOINT-DEFINITION
+  order, which makes the two paths give IDENTICAL indices and removes the
+  dependency entirely. Physically nothing changes (each actuator still drives
+  its own joint with its own ctrlrange); only the index->joint map of the action
+  vector does, and this fork's action interface is new anyway (angle targets,
+  not torques).
+  Asserted at load: jnt_qposadr[actuator_trnid[a,0]] == nq - nu + a for all a.
+
+  --------------------------------------------------------------- 3. FORCERANGE
+  forcerange = +/-150 == the stock torque motors' gear=150 with ctrlrange
+  [-1,1], on all eight, with forcelimited="true". This is what makes the fork a
+  TORQUE-FAITHFUL analog of the torque Ant: same maximum joint torque, a
+  different command interface. Without it torque = kp*error is UNBOUNDED (here
+  it would reach kp * 1.745 rad = 1745 N.m) and the body gets launched -- the
+  second half of the 18.13 Hopper failure. Measured over 6000 random-target
+  macro-steps: max |actuator_force| = 150.0000 exactly, never above.
+
+  ------------------------------------------------------------------- 4. GAINS
+  kp=1000, kv=30, chosen by MEASUREMENT. Timestep is 0.01 and the SMDP mode
+  runs frame_skip=1, so one frame = 0.01 s; the stock torque Ant's control
+  period is frame_skip=5 = 0.05 s.
+
+  Driving torque is kp*error, so a LOW kp makes SMALL moves CREEP -- the third
+  Hopper bug, where kp=200 turned a 0.06 rad move into 79 frames. Frames for a
+  +0.06 rad move on all eight joints from a settled pose, its peak actuator
+  force, and the dwell distribution under uniform-random targets
+  (max_frames=50, pos_tol=0.05, vel check off):
+
+  ("peak force" = max |actuator_force| over the frames of that move, measured on
+  the unwrapped env after settling 400 frames at the ctrlrange midpoints; the
+  same quantity measured from a different settled pose is smaller, so read the
+  column as a COMPARISON across kp, not as an absolute.)
+
+      kp     +0.06 rad   peak force   random dwell p10/med/p90   at cap
+      200      5 fr       11 / 150         13 / 35 / 50          24.6%   creeps
+      500      3 fr       26 / 150          9 / 23 / 26           0%
+     1000      3 fr       43 / 150          9 / 16 / 22           0%     CHOSEN
+     2000      2 fr       59 / 150          9 / 12 / 16           0%
+     4000      2 fr      150 / 150          9 / 12 / 15           0%     bang-bang
+     8000      2 fr      150 / 150            --                         bang-bang
+
+  kp=1000 puts the whole bulk of the random-target dwell distribution inside
+  10-25 frames while a small correction still costs only 3 frames (0.03 s,
+  ~33 Hz, better than the stock Ant's 20 Hz control period), and it keeps
+  43/150 = 29% force headroom on that small move -- the same relative headroom
+  the tuned hopper fork has (57/200 = 28%). kp >= 4000 saturates forcerange even
+  on a 0.10 rad move, destroying the proportional band and compressing the dwell
+  distribution (the SMDP's whole signal) for a 0.01 s bandwidth gain. kp=200 is
+  the Hopper creep regime: 25% of macros hit max_frames because the servo cannot
+  complete a large move at all.
+
+  Raising kp is NOT making the actuator stronger: forcerange=150 still caps
+  torque at exactly the stock motor's limit. kp only sets how aggressively the
+  servo spends that budget, and high gain under a hard torque ceiling is how
+  real position-controlled robots are built.
+
+  kv=30. Unlike Hopper, kv is NOT a red herring on Ant -- it moves the dwell
+  distribution. Overshoot past the target on a +0.06 rad move, and random dwell,
+  at kp=1000:
+
+      kv=10  -> overshoot 0.0350 rad (70% of pos_tol), dwell 17/30/42  ringing
+      kv=30  -> overshoot 0.0121 rad (24% of pos_tol), dwell  9/14/22  CHOSEN
+      kv=60  -> overshoot 0.0007 rad,                  dwell 13/15/18  ~critical
+      kv=100 -> overshoot 0.0006 rad,                  dwell 22/26/29  overdamped
+
+  kv=30 is zeta ~0.43 against the critical 2*sqrt(kp*I_eff) ~ 69; the residual
+  overshoot is well inside pos_tol, so it cannot cause stop-criterion chatter,
+  and it gives the widest dwell spread (2.4x p10->p90) of the four.
+
+  ---------------------------- 5. CAVEAT: Ant-v5's CONTROL COST now penalises
+  POSTURE, not effort (NOT fixed here -- flagged for an explicit decision)
+  Ant-v5's reward subtracts ctrl_cost_weight * ||ctrl||^2 with
+  ctrl_cost_weight = 0.5. Swapping motors for position servos changes what
+  `ctrl` MEANS -- it is now a joint ANGLE in radians, not a normalised torque
+  in [-1,1] -- so that term becomes a penalty on the commanded POSE. Because
+  the four ankles cannot be commanded closer to 0 than 0.5236 rad, there is an
+  IRREDUCIBLE cost floor:
+
+      min sum ctrl^2 = 2.1932  ->  1.0966 per frame   (hips 0, ankles at 0.5236)
+      max sum ctrl^2 = 7.0671  ->  3.5336 per frame
+      healthy_reward =                1.0000 per frame
+
+  i.e. the cheapest legal pose already costs 110% of the survival bonus, so the
+  ant must exceed ~0.10 m/s just to break even, and any leg extension costs
+  more. Measured per-frame decomposition under uniform-random targets over 6000
+  frames: reward -0.809 = forward -0.022 + survive 1.000 + ctrl -1.785.
+  The swimmer and hopper forks have the same structural change but their
+  ctrl_cost_weight is 1e-4 / 1e-3, so it is invisible there; on Ant it dominates.
+  Nothing here is broken -- the physics, the torque ceiling and the reachable
+  set are all correct -- but the OBJECTIVE is no longer the published Ant's.
+  If that matters, pass ctrl_cost_weight (a genuine Ant-v5 gym.make kwarg, so it
+  flows through gym_kwargs untouched) from the _ANGLE_SMDP_SPECS entry. That is
+  a study-design decision, deliberately not taken unilaterally.
+
+  Re-tune via smdp_interactive.py:
+      --env Ant-v5 --xml-file apo/envs/assets/ant_position.xml
+      --stop-mode target_reached --rescale-action
+-->
+<mujoco model="ant">
+  <compiler angle="degree" coordinate="local" inertiafromgeom="true"/>
+  <option integrator="RK4" timestep="0.01"/>
+  <custom>
+    <numeric data="0.0 0.0 0.55 1.0 0.0 0.0 0.0 0.0 1.0 0.0 -1.0 0.0 -1.0 0.0 1.0" name="init_qpos"/>
+  </custom>
+  <default>
+    <joint armature="1" damping="1" limited="true"/>
+    <geom conaffinity="0" condim="3" density="5.0" friction="1 0.5 0.5" margin="0.01" rgba="0.8 0.6 0.4 1"/>
+  </default>
+  <asset>
+    <texture builtin="gradient" height="100" rgb1="1 1 1" rgb2="0 0 0" type="skybox" width="100"/>
+    <texture builtin="flat" height="1278" mark="cross" markrgb="1 1 1" name="texgeom" random="0.01" rgb1="0.8 0.6 0.4" rgb2="0.8 0.6 0.4" type="cube" width="127"/>
+    <texture builtin="checker" height="100" name="texplane" rgb1="0 0 0" rgb2="0.8 0.8 0.8" type="2d" width="100"/>
+    <material name="MatPlane" reflectance="0.5" shininess="1" specular="1" texrepeat="60 60" texture="texplane"/>
+    <material name="geom" texture="texgeom" texuniform="true"/>
+  </asset>
+  <worldbody>
+    <light cutoff="100" diffuse="1 1 1" dir="-0 0 -1.3" directional="true" exponent="1" pos="0 0 1.3" specular=".1 .1 .1"/>
+    <geom conaffinity="1" condim="3" material="MatPlane" name="floor" pos="0 0 0" rgba="0.8 0.9 0.8 1" size="40 40 40" type="plane"/>
+    <body name="torso" pos="0 0 0.75">
+      <camera name="track" mode="trackcom" pos="0 -3 0.3" xyaxes="1 0 0 0 0 1"/>
+      <geom name="torso_geom" pos="0 0 0" size="0.25" type="sphere"/>
+      <joint armature="0" damping="0" limited="false" margin="0.01" name="root" pos="0 0 0" type="free"/>
+      <body name="front_left_leg" pos="0 0 0">
+        <geom fromto="0.0 0.0 0.0 0.2 0.2 0.0" name="aux_1_geom" size="0.08" type="capsule"/>
+        <body name="aux_1" pos="0.2 0.2 0">
+          <joint axis="0 0 1" name="hip_1" pos="0.0 0.0 0.0" range="-30 30" type="hinge"/>
+          <geom fromto="0.0 0.0 0.0 0.2 0.2 0.0" name="left_leg_geom" size="0.08" type="capsule"/>
+          <body pos="0.2 0.2 0">
+            <joint axis="-1 1 0" name="ankle_1" pos="0.0 0.0 0.0" range="30 70" type="hinge"/>
+            <geom fromto="0.0 0.0 0.0 0.4 0.4 0.0" name="left_ankle_geom" size="0.08" type="capsule"/>
+          </body>
+        </body>
+      </body>
+      <body name="front_right_leg" pos="0 0 0">
+        <geom fromto="0.0 0.0 0.0 -0.2 0.2 0.0" name="aux_2_geom" size="0.08" type="capsule"/>
+        <body name="aux_2" pos="-0.2 0.2 0">
+          <joint axis="0 0 1" name="hip_2" pos="0.0 0.0 0.0" range="-30 30" type="hinge"/>
+          <geom fromto="0.0 0.0 0.0 -0.2 0.2 0.0" name="right_leg_geom" size="0.08" type="capsule"/>
+          <body pos="-0.2 0.2 0">
+            <joint axis="1 1 0" name="ankle_2" pos="0.0 0.0 0.0" range="-70 -30" type="hinge"/>
+            <geom fromto="0.0 0.0 0.0 -0.4 0.4 0.0" name="right_ankle_geom" size="0.08" type="capsule"/>
+          </body>
+        </body>
+      </body>
+      <body name="back_leg" pos="0 0 0">
+        <geom fromto="0.0 0.0 0.0 -0.2 -0.2 0.0" name="aux_3_geom" size="0.08" type="capsule"/>
+        <body name="aux_3" pos="-0.2 -0.2 0">
+          <joint axis="0 0 1" name="hip_3" pos="0.0 0.0 0.0" range="-30 30" type="hinge"/>
+          <geom fromto="0.0 0.0 0.0 -0.2 -0.2 0.0" name="back_leg_geom" size="0.08" type="capsule"/>
+          <body pos="-0.2 -0.2 0">
+            <joint axis="-1 1 0" name="ankle_3" pos="0.0 0.0 0.0" range="-70 -30" type="hinge"/>
+            <geom fromto="0.0 0.0 0.0 -0.4 -0.4 0.0" name="third_ankle_geom" size="0.08" type="capsule"/>
+          </body>
+        </body>
+      </body>
+      <body name="right_back_leg" pos="0 0 0">
+        <geom fromto="0.0 0.0 0.0 0.2 -0.2 0.0" name="aux_4_geom" size="0.08" type="capsule"/>
+        <body name="aux_4" pos="0.2 -0.2 0">
+          <joint axis="0 0 1" name="hip_4" pos="0.0 0.0 0.0" range="-30 30" type="hinge"/>
+          <geom fromto="0.0 0.0 0.0 0.2 -0.2 0.0" name="rightback_leg_geom" size="0.08" type="capsule"/>
+          <body pos="0.2 -0.2 0">
+            <joint axis="1 1 0" name="ankle_4" pos="0.0 0.0 0.0" range="30 70" type="hinge"/>
+            <geom fromto="0.0 0.0 0.0 0.4 -0.4 0.0" name="fourth_ankle_geom" size="0.08" type="capsule"/>
+          </body>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+  <actuator>
+    <!-- Position (PD) servos replacing the stock torque motors (gear=150).
+         Listed in JOINT-DEFINITION order (NOT the stock actuator order,
+         which is rotated by 6) so HoldUntilTargetReached's elementwise
+         qpos[-8:] vs action comparison is aligned -- see header section 2.
+         ctrlrange == each joint's own `range` in radians; forcerange ==
+         the stock motors' 150 N.m. -->
+    <position joint="hip_1" kp="1000" kv="30" gear="1"
+              ctrlrange="-0.52359878 0.52359878" ctrllimited="true"
+              forcerange="-150 150" forcelimited="true"/>
+    <position joint="ankle_1" kp="1000" kv="30" gear="1"
+              ctrlrange="0.52359878 1.22173048" ctrllimited="true"
+              forcerange="-150 150" forcelimited="true"/>
+    <position joint="hip_2" kp="1000" kv="30" gear="1"
+              ctrlrange="-0.52359878 0.52359878" ctrllimited="true"
+              forcerange="-150 150" forcelimited="true"/>
+    <position joint="ankle_2" kp="1000" kv="30" gear="1"
+              ctrlrange="-1.22173048 -0.52359878" ctrllimited="true"
+              forcerange="-150 150" forcelimited="true"/>
+    <position joint="hip_3" kp="1000" kv="30" gear="1"
+              ctrlrange="-0.52359878 0.52359878" ctrllimited="true"
+              forcerange="-150 150" forcelimited="true"/>
+    <position joint="ankle_3" kp="1000" kv="30" gear="1"
+              ctrlrange="-1.22173048 -0.52359878" ctrllimited="true"
+              forcerange="-150 150" forcelimited="true"/>
+    <position joint="hip_4" kp="1000" kv="30" gear="1"
+              ctrlrange="-0.52359878 0.52359878" ctrllimited="true"
+              forcerange="-150 150" forcelimited="true"/>
+    <position joint="ankle_4" kp="1000" kv="30" gear="1"
+              ctrlrange="0.52359878 1.22173048" ctrllimited="true"
+              forcerange="-150 150" forcelimited="true"/>
+  </actuator>
+</mujoco>
