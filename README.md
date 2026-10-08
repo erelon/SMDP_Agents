@@ -7,14 +7,22 @@ A modular reinforcement learning library supporting tabular, bandit, deep Q-lear
 ## Installation
 
 ```bash
-pip install -r requirements.txt   # numpy, torch + gymnasium, pandas, matplotlib
+pip install -e .                  # the library: numpy, torch
+pip install -e ".[examples]"      # + gymnasium, pandas, matplotlib for examples/
+pip install -r requirements.txt   # equivalent, without installing the package
 ```
 
-`import agents` pulls in the deep agents, so **torch is required even to use the tabular ones**, and to run the test suite. The one exception is `rate_comparison.py`, a standalone CLI that loads `agents/average_rates.py` by path so it stays dependency-free.
+The distribution is `smdp-agents` and the import name is `smdp_agents`. Both are
+deliberately not the bare `agents`: that is a common top-level module name — the
+`openai-agents` package ships one — and installing this library into a shared
+environment (Isaac Lab's, say) under that name would silently shadow or be
+shadowed by it.
+
+`import smdp_agents` pulls in the deep agents, so **torch is required even to use the tabular ones**, and to run the test suite. The one exception is `rate_comparison.py`, a standalone CLI that loads `smdp_agents/average_rates.py` by path so it stays dependency-free.
 
 `gymnasium`, `pandas` and `matplotlib` are needed only by `examples/` — the
 environments are Gymnasium environments, `btc_market` reads a CSV, and the plots
-are matplotlib. Nothing in `agents/` imports any of them.
+are matplotlib. Nothing in `smdp_agents/` imports any of them.
 
 ---
 
@@ -25,7 +33,7 @@ are matplotlib. Nothing in `agents/` imports any of them.
 Every agent requires a `name` and an `action_space` (a list of valid actions). Optional hyperparameters vary by algorithm.
 
 ```python
-from agents import QLearning, RLearning, SMART, UCB, DeepQWrapper
+from smdp_agents import QLearning, RLearning, SMART, UCB, DeepQWrapper
 
 agent = QLearning(
     name="my_agent",
@@ -83,7 +91,7 @@ Wrap any `ContinuousQLearning`-derived agent with a neural network. The wrapped 
 
 ```python
 import torch.nn as nn
-from agents import SMART, DeepQWrapper
+from smdp_agents import SMART, DeepQWrapper
 
 base = SMART(name="smart", action_space=[0, 1, 2], learning_rate=0.001)
 
@@ -108,7 +116,7 @@ The discounted baseline, and the core every average-reward agent builds on. It i
 env-agnostic (torch + numpy); you provide the rollout loop.
 
 ```python
-from agents import PPO, RolloutBuffer
+from smdp_agents import PPO, RolloutBuffer
 
 agent = PPO(obs_dim, act_dim)
 buf = RolloutBuffer()
@@ -123,10 +131,13 @@ for itr in range(n_itr):
     stats = agent.update(buf, agent.value(obs))      # bootstrap from the final obs
 ```
 
-The action space is owned by a *head*, so PPO itself never mentions a Gaussian or
-a softmax: `GaussianHead` (the default) or `CategoricalHead` for discrete control.
+`buf.add(..., time=)` is the per-step dwell (`1.0` for an MDP, the macro-step duration for an SMDP). It feeds the GAE recursion twice: through the `- \rho\tau` rate correction, and through the SMDP discount `\gamma^\tau`, which replaces the flat `\gamma` so that a macro-step of duration `\tau` is discounted as the `\tau` primitive steps it stands in for. For a discounted agent on variable-duration steps this is a real change — with `\gamma = 0.99` a `\tau = 50` option now carries `0.605` rather than `0.99`. Average-reward agents default to `discount=1.0`, where `\gamma^\tau = 1` and the holding time enters only through `rate_residual`.
 
-For the average-reward agents, see SMAPO below.
+Pass `discrete=True` for a categorical actor over `act_dim` options instead of the default diagonal-Gaussian one; `act()` then returns `int64` option indices and `eval_act()` the argmax. Everything else — the rate machinery, GAE, the clipped surrogate — is distribution-agnostic and shared.
+
+```python
+agent = RsmartSMAPO(obs_dim, n_options, discrete=True)
+```
 
 ### 6b. SMAPO — average-reward policy optimisation for SMDPs
 
@@ -145,11 +156,12 @@ with three changes and nothing else:
    moving one, so it means something different on every task and at every point
    of a run.
 
-The rate estimator and the action space are both supplied by inheritance, so
-they vary independently:
+Adding a variant is one line — inherit `SMAPO` plus a tabular rate agent, and
+pick how a batch feeds the rate updater via `rho_reduce` (`"mean"`, `"sum"`, or
+`"none"` for per-transition):
 
 ```python
-from agents import RsmartSMAPO, RolloutBuffer
+from smdp_agents import RsmartSMAPO, RolloutBuffer
 
 agent = RsmartSMAPO(obs_dim, act_dim)          # Gaussian policy
 buf = RolloutBuffer()
@@ -172,8 +184,9 @@ stats = agent.update(buf, bootstrap_value=agent.value(obs))
 The rest of the harmonic family has SMAPO agents too — weighted, cumulative, and
 the two whose residual is divided by $|\rho|$ — listed in the algorithm table below.
 
-Each has a discrete-action counterpart (`DiscreteRsmartSMAPO`, …) that differs
-only by mixing in `CategoricalHead`; evaluation there is the argmax.
+Each has a `Discrete*` convenience class (`DiscreteRsmartSMAPO`, …) that presets
+`discrete=True`; `act_dim` is then the number of options and evaluation is the
+argmax.
 
 **`time` is load-bearing.** It is the per-decision holding time — `1.0` for an
 MDP, the macro-step duration for an SMDP. It defaults to `1.0`, so omitting it
@@ -228,13 +241,13 @@ steps   = agent.step_count                  # learn() calls since construction/r
 | `CumulativeHarmonicSMAPO`, `CumulativeWeightedHarmonicSMAPO` | the same over the whole run, without forgetting | — |
 | `ExperimentalWeightedHarmonicSMAPO`, `ExperimentalCumulativeWeightedHarmonicSMAPO` | weighted HMA rate, residual divided by $\|\rho\|$ | — |
 | `SmoothedSmartSMAPO` | SMAPO with the elapsed-time smoothed rate | — |
-| `Discrete*SMAPO` | the same four over a discrete action space (`CategoricalHead`) | — |
+| `Discrete*SMAPO` | the same agents over a discrete action space (`discrete=True`) | — |
 | `RandomAgent` | Uniformly random baseline | — |
 | `Oracle` | Optimal-action oracle (requires environment secret) | — |
 
 ### Reward-rate estimators
 
-`agents/average_rates.py` holds the averaging primitives the rate-based agents are built from. It has no dependencies beyond the standard library, so it can be imported on its own.
+`smdp_agents/average_rates.py` holds the averaging primitives the rate-based agents are built from. It has no dependencies beyond the standard library, so it can be imported on its own.
 
 | Class | Estimate |
 |---|---|
@@ -280,9 +293,9 @@ The `time` parameter passed to `learn()` is the holding time $\tau$. Each algori
 
 $$Q(s,a) \leftarrow Q(s,a) + \alpha \left[ r + \gamma^{\tau} \max_{a'} Q(s',a') - Q(s,a) \right]$$
 
-**Average-reward R-Learning** (`ContinuousRLearning`): the reward-rate $\rho$ (reward per unit time) is subtracted proportionally to the holding time:
+**Average-reward R-Learning** (`ContinuousRLearning`): the system average reward-rate $\rho$ (reward per unit time) is subtracted proportionally to the holding time:
 
-$$Q(s,a) \leftarrow Q(s,a) + \alpha \left[ r - \rho\,\tau + \max_{a'} Q(s',a') - Q(s,a) \right]$$
+$$Q(s,a) \leftarrow Q(s,a) + \alpha \left[ r - \rho\cdot\tau + \max_{a'} Q(s',a') - Q(s,a) \right]$$
 
 **SMART**: $\rho$ is the ratio of accumulated reward to accumulated time, making it naturally unit-consistent across variable-duration actions:
 
@@ -308,7 +321,7 @@ where $p_+, p_-, p_0$ are exponential averages of the sign indicators and the we
 
 All four use R-learning's plain $r - \rho\tau$ target; only $\rho$ differs between them.
 
-**Experimental: the $|\rho|$-scaled target.** `agents/experemental_harmonic_r.py` holds `ExperimentalWeightedHarmonic` and `ExperimentalCumulativeWeightedHarmonic`, identical to the two reward-weighted agents except that the advantage is divided by $|\rho|$:
+**Experimental: the $|\rho|$-scaled target.** `smdp_agents/experemental_harmonic_r.py` holds `ExperimentalWeightedHarmonic` and `ExperimentalCumulativeWeightedHarmonic`, identical to the two reward-weighted agents except that the advantage is divided by $|\rho|$:
 
 $$Q(s,a) \leftarrow Q(s,a) + \alpha\left[\frac{r - \rho\,\tau}{|\rho|} + \max_{a'} Q(s',a') - Q(s,a)\right]$$
 
@@ -423,7 +436,7 @@ python -m unittest -v tests.test_r_learning.RLearningTests
 python -m unittest discover -s tests          # full suite, standard output
 ```
 
-Each `tests/test_*.py` module covers the `agents/` module it is named after, and imports it directly — the suite requires torch, so nothing is skipped or conditionally loaded.
+Each `tests/test_*.py` module covers the `smdp_agents/` module it is named after, and imports it directly — the suite requires torch, so nothing is skipped or conditionally loaded.
 
 For line coverage, if `coverage.py` is installed:
 

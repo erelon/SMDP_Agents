@@ -3,11 +3,10 @@ import unittest
 
 import torch
 
-from agents.policy_heads import CategoricalHead, GaussianHead
-from agents.ppo import RolloutBuffer
-from agents.average_rates import (NormalizedExponentialMovingTimeRate,
+from smdp_agents.ppo import RolloutBuffer
+from smdp_agents.average_rates import (NormalizedExponentialMovingTimeRate,
                                   WeightedHarmonicRate)
-from agents.smapo import (APO, CumulativeHarmonicSMAPO, WeightedHarmonicSMAPO,
+from smdp_agents.smapo import (APO, CumulativeHarmonicSMAPO, WeightedHarmonicSMAPO,
                           CumulativeWeightedHarmonicSMAPO,
                           DiscreteRsmartSMAPO,
                           ExperimentalCumulativeWeightedHarmonicSMAPO,
@@ -137,7 +136,7 @@ class SMAPOTests(unittest.TestCase):
     def test_discrete_variant_runs_and_evaluates_by_argmax(self):
         n_actions = 5
         agent = DiscreteRsmartSMAPO(OBS, n_actions, seed=0)
-        self.assertIsInstance(agent, CategoricalHead)
+        self.assertTrue(agent.discrete)
         buf, bv = rollout(agent)
         stats = agent.update(buf, bv)
         self.assertTrue(math.isfinite(stats["loss"]))
@@ -145,11 +144,10 @@ class SMAPOTests(unittest.TestCase):
         a = agent.eval_act(obs)
         self.assertEqual(tuple(a.shape), (7,))
         self.assertTrue(((a >= 0) & (a < n_actions)).all())
-        params, _ = agent.forward_net(obs)
-        self.assertTrue(torch.equal(a.long(), params.argmax(-1)))
+        self.assertTrue(torch.equal(a.long(), agent.net(obs)[0].argmax(-1)))
 
     def test_continuous_default_is_gaussian(self):
-        self.assertIsInstance(RsmartSMAPO(OBS, ACT, seed=0), GaussianHead)
+        self.assertFalse(RsmartSMAPO(OBS, ACT, seed=0).discrete)
 
 
 class RateEstimatorTests(unittest.TestCase):

@@ -10,8 +10,8 @@ from .harmonic_r import (CumulativeHarmonic, CumulativeWeightedHarmonic,
 from .experemental_harmonic_r import (ExperimentalCumulativeWeightedHarmonic,
                                       ExperimentalWeightedHarmonic)
 from .deep_q_wrapper import DeepQWrapper
+from .gaussian_mlp import CategoricalMLP, GaussianMLP
 from .ppo import PPO, RolloutBuffer
-from .policy_heads import CategoricalHead, CategoricalMLP, GaussianHead
 from .smapo import (APO, SMAPO, CumulativeHarmonicSMAPO,
                     CumulativeWeightedHarmonicSMAPO, DiscreteAPO,
                     DiscreteHarmonicSMAPO, DiscreteRsmartSMAPO,
@@ -41,7 +41,7 @@ __all__ = [
     'ExperimentalCumulativeWeightedHarmonicSMAPO',
     'DiscreteAPO', 'DiscreteRsmartSMAPO', 'DiscreteSmartSMAPO',
     'DiscreteHarmonicSMAPO', 'DiscreteSmoothedSmartSMAPO',
-    'GaussianHead', 'CategoricalHead', 'CategoricalMLP',
+    'GaussianMLP', 'CategoricalMLP',
     'PPO',
     'RolloutBuffer',
 ]

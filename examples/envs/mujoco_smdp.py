@@ -13,7 +13,7 @@ decision.
 Each step returns the holding time in ``info["tau"]``; feed it to the agent::
 
     from examples.envs.mujoco_smdp import make_swimmer
-    from agents import RsmartSMAPO, RolloutBuffer
+    from smdp_agents import RsmartSMAPO, RolloutBuffer
 
     env = make_swimmer()
     obs, _ = env.reset(seed=0)

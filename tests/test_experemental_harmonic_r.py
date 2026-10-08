@@ -1,4 +1,4 @@
-"""Tests for the ``|rho|``-scaled TD target in ``agents/experemental_harmonic_r.py``.
+"""Tests for the ``|rho|``-scaled TD target in ``smdp_agents/experemental_harmonic_r.py``.
 
 Two claims to hold it to: it really does scale the advantage, and unlike dividing
 by a *signed* rho it never reorders two actions -- which is the whole reason for
@@ -7,12 +7,12 @@ the absolute value.
 
 import unittest
 
-from agents.experemental_harmonic_r import (AbsRhoScaledTarget,
+from smdp_agents.experemental_harmonic_r import (AbsRhoScaledTarget,
                                             ExperimentalCumulativeWeightedHarmonic,
                                             ExperimentalWeightedHarmonic)
-from agents.harmonic_r import (CumulativeHarmonic, CumulativeWeightedHarmonic,
+from smdp_agents.harmonic_r import (CumulativeHarmonic, CumulativeWeightedHarmonic,
                                Harmonic, WeightedHarmonic)
-from agents.r_learning import ContinuousRLearning
+from smdp_agents.r_learning import ContinuousRLearning
 
 
 class ExperimentalHarmonicTargetTests(unittest.TestCase):

@@ -1,6 +1,6 @@
 import unittest
 
-from agents.relaxed_smart import RelaxedSMART
+from smdp_agents.relaxed_smart import RelaxedSMART
 
 
 class RelaxedSmartTests(unittest.TestCase):

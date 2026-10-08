@@ -1,6 +1,6 @@
 import unittest
 
-from agents.r_learning import ContinuousRLearning, RLearning
+from smdp_agents.r_learning import ContinuousRLearning, RLearning
 
 
 class RLearningTests(unittest.TestCase):

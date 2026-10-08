@@ -30,11 +30,9 @@ estimators, so the algorithm and the estimator vary independently::
                            members of that family -- see below)
     SmoothedSmartSMAPO    rho smoothed in ELAPSED TIME, not per transition
 
-The action space is supplied the same way, by a policy head, so each variant has
-a discrete counterpart that differs only in its base classes::
-
-    class DiscreteRsmartSMAPO(CategoricalHead, RsmartSMAPO):
-        pass
+The action space is a constructor flag inherited from :class:`~smdp_agents.ppo.PPO`:
+``discrete=True`` swaps the Gaussian actor for a categorical one. Every variant
+below has a ``Discrete*`` convenience class that sets it.
 
 You provide the environment loop; the agents are env-agnostic (torch + numpy)::
 
@@ -58,7 +56,6 @@ from .experemental_harmonic_r import (
     abs_rho_scaled_advantage)
 from .harmonic_r import (CumulativeHarmonic, CumulativeWeightedHarmonic,
                          Harmonic, WeightedHarmonic)
-from .policy_heads import CategoricalHead
 from .ppo import PPO
 from .relaxed_smart import RelaxedSMART
 from .smart_r import SMART, SmoothedSMART
@@ -216,10 +213,8 @@ class SMAPO(PPO):
         # Is the width already recovering? Measured on the behaviour policy's
         # entropy and smoothed twice (level, then slope) so one noisy batch
         # cannot flip the decision.
-        with torch.no_grad():
-            obs = batch["obs"].reshape(-1, batch["obs"].shape[-1])
-            params, _ = self.forward_net(obs)
-            entropy = float(self.entropy(params).mean().item())
+        entropy = self.policy_entropy(
+            batch["obs"].reshape(-1, batch["obs"].shape[-1]))
         g = self._rate(steps, self.pressure_track_steps)
         if self._entropy_ema is None:
             self._entropy_ema, slope = entropy, 0.0
@@ -307,14 +302,13 @@ class SmoothedSmartSMAPO(SMAPO, SmoothedSMART):
 
 # --- the rest of the harmonic family ----------------------------------------
 # Every one of these is the same algorithm with a different rho; they are listed
-# individually rather than generated so that `from agents import X` works and the
+# individually rather than generated so that `from smdp_agents import X` works and
 # docstring can say what each one's rho is. All take `rho_reduce = "none"`: the
 # harmonic estimators stratify by the sign of the reward, so they need each
 # transition rather than a batch aggregate.
 #
 # A discrete-action counterpart of any of these is one class line, as above:
-#     class DiscreteWeightedHarmonicSMAPO(CategoricalHead, WeightedHarmonicSMAPO):
-#         pass
+#     WeightedHarmonicSMAPO(obs_dim, n_options, discrete=True)
 
 class WeightedHarmonicSMAPO(SMAPO, WeightedHarmonic):
     """Harmonic mean weighted by the reward itself."""
@@ -366,22 +360,32 @@ class ExperimentalCumulativeWeightedHarmonicSMAPO(
     rho_reduce = "none"
 
 
-# Discrete-action counterparts: the head is the only difference.
-class DiscreteAPO(CategoricalHead, APO):
+# --- discrete-action convenience classes ------------------------------------
+# `discrete=True` is a PPO constructor flag, so these only pre-set it; `act_dim`
+# is then the NUMBER OF ACTIONS rather than a vector width. Any other variant
+# above can be used discretely by passing the flag directly.
+
+class _Discrete:
+    def __init__(self, obs_dim, n_actions, **kwargs):
+        kwargs.setdefault("discrete", True)
+        super().__init__(obs_dim, n_actions, **kwargs)
+
+
+class DiscreteAPO(_Discrete, APO):
     pass
 
 
-class DiscreteRsmartSMAPO(CategoricalHead, RsmartSMAPO):
+class DiscreteRsmartSMAPO(_Discrete, RsmartSMAPO):
     pass
 
 
-class DiscreteSmartSMAPO(CategoricalHead, SmartSMAPO):
+class DiscreteSmartSMAPO(_Discrete, SmartSMAPO):
     pass
 
 
-class DiscreteHarmonicSMAPO(CategoricalHead, HarmonicSMAPO):
+class DiscreteHarmonicSMAPO(_Discrete, HarmonicSMAPO):
     pass
 
 
-class DiscreteSmoothedSmartSMAPO(CategoricalHead, SmoothedSmartSMAPO):
+class DiscreteSmoothedSmartSMAPO(_Discrete, SmoothedSmartSMAPO):
     pass

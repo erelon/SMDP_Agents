@@ -1,7 +1,7 @@
 import math
 import unittest
 
-from agents.mab_ucb import UCB, ContinuosUCB
+from smdp_agents.mab_ucb import UCB, ContinuosUCB
 
 
 class RestrictedEnvironment:

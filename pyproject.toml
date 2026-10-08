@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "smdp-agents"
+version = "0.1.0"
+description = "Modular average-reward RL agents with first-class SMDP (variable holding-time) support."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "torch",
+]
+
+[project.optional-dependencies]
+# examples/ only: the environments are Gymnasium environments, and the runner's
+# reports and plots use these. smdp_agents/ itself needs none of them.
+examples = ["gymnasium", "pandas", "matplotlib"]
+
+[tool.setuptools]
+# Flat layout: the importable package lives in ./smdp_agents. The distribution
+# name is `smdp-agents` and the import name `smdp_agents` — deliberately not the
+# bare `agents`, which collides with other installed packages (openai-agents
+# ships a top-level `agents` module) when this is installed into a shared
+# environment such as Isaac Lab's.
+packages = ["smdp_agents"]

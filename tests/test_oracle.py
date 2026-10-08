@@ -1,6 +1,6 @@
 import unittest
 
-from agents.oracle import Oracle
+from smdp_agents.oracle import Oracle
 
 
 class OracleTests(unittest.TestCase):

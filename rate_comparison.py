@@ -9,9 +9,9 @@ import importlib.util
 import math
 from pathlib import Path
 
-# Load the dependency-free module without executing agents/__init__.py, whose
+# Load the dependency-free module without executing smdp_agents/__init__.py, whose
 # optional deep-RL imports require packages that this utility does not need.
-_AVERAGE_RATES_PATH = Path(__file__).resolve().parent / "agents" / "average_rates.py"
+_AVERAGE_RATES_PATH = Path(__file__).resolve().parent / "smdp_agents" / "average_rates.py"
 _SPEC = importlib.util.spec_from_file_location("average_rates", _AVERAGE_RATES_PATH)
 if _SPEC is None or _SPEC.loader is None:  # pragma: no cover - import machinery guard
     raise ImportError(f"cannot load {_AVERAGE_RATES_PATH}")

@@ -1,6 +1,6 @@
 import unittest
 
-from agents.mab_epsilon import EpsilonGreedyMAB, ContinuousEpsilonGreedyMAB
+from smdp_agents.mab_epsilon import EpsilonGreedyMAB, ContinuousEpsilonGreedyMAB
 
 
 class RestrictedEnvironment:

@@ -1,6 +1,6 @@
 # SMAPO extraction — what was kept, what was dropped, what is reproducible
 
-This records the decisions behind `agents/smapo.py`. The source implementation
+This records the decisions behind `smdp_agents/smapo.py`. The source implementation
 accumulated a large number of experimental flags while the algorithm was being
 developed; almost all of them were tested and not adopted. This repo carries the
 **final algorithm only**.
@@ -45,7 +45,7 @@ Two of these are worth flagging because the development notes say otherwise.
 | the rate estimator, by inheritance | `APO` / `RsmartSMAPO` / `SmartSMAPO` / `SmoothedSmartSMAPO` |
 | A-centering | `SMAPO.shape_advantage` |
 | calibrated entropy pressure, with tracking and the starvation boost | `SMAPO._update_entropy_coeff`, `SMAPO._boost_step` |
-| debiased rate estimators | already in `agents/average_rates.py` (`NormalizedEMA`) |
+| debiased rate estimators | already in `smdp_agents/average_rates.py` (`NormalizedEMA`) |
 | value-bias correction `rm_vbias_coeff` | inherited from `PPO`; a searched hyperparameter, kept as a parameter |
 
 Controller rates are specified in **environment steps**, not iterations, because
@@ -105,12 +105,17 @@ formulation turns on.
 1. **The pre-SMAPO deep variants are gone.** `RsmartPPO`, `SmartPPO`,
    `HarmonicPPO`, `SmoothedSmartPPO` and `ExperimentalWeightedHarmonicPPO` were
    the same rate estimators without A-centering or pressure; they are superseded
-   by the SMAPO variants and were removed. `agents/ppo.py` is now the discounted
+   by the SMAPO variants and were removed. `smdp_agents/ppo.py` is now the discounted
    baseline and the rollout buffer, nothing else. Their test coverage was
    retargeted onto the SMAPO variants rather than deleted.
 2. **Harmonic survives as `HarmonicSMAPO`.** The tabular harmonic estimators are
    untouched; only the deep wrapper changed.
-3. **Both additions can be switched off** — `a_centering=True` and
+3. **The action space uses `master`'s mechanism, not a new one.** An earlier
+   draft of this work added a policy-head mixin; `master` had meanwhile shipped
+   a `discrete=True` constructor flag that does the same job and handles cases
+   the mixin did not (`int64` actions out of `act`, unbatched observations). The
+   mixin was dropped rather than kept alongside it.
+4. **Both additions can be switched off** — `a_centering=True` and
    `calibrated_pressure=True` are the defaults, and either can be set `False` to
    measure what it contributes. With both off this is average-reward PPO with a
    fixed entropy coefficient.
@@ -119,6 +124,6 @@ formulation turns on.
    with an error. It would leave the mechanism running and overwrite
    `entropy_loss_coeff` with 0 on every iteration, silently discarding a fixed
    coefficient the caller had set.
-4. **The default `entropy_pressure = 0.02` is a placeholder.** The value is
+5. **The default `entropy_pressure = 0.02` is a placeholder.** The value is
    environment-specific and was searched per environment; the Swimmer champion
    used 0.005. There is no universal setting and the paper claims none.

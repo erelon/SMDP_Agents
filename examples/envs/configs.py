@@ -249,7 +249,7 @@ def high_time_variance(long_reward: float = 10.0, long_time: float = 10.0,
 
     ``WeightedHarmonic`` and ``RelaxedSMART`` land on the same row because on this
     environment they are the same agent: identical rho by the collapse below, and
-    the same R-learning target. (``agents/experemental_harmonic_r.py`` breaks that
+    the same R-learning target. (``smdp_agents/experemental_harmonic_r.py`` breaks that
     tie deliberately, by dividing the reward-weighted agents' advantage by
     ``|rho|``; it is a scaling of the TD error, not a reordering, so it moves the
     learning dynamics rather than the threshold.)

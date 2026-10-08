@@ -3,9 +3,9 @@ import unittest
 import torch
 import torch.nn as nn
 
-from agents.deep_q_wrapper import DeepQWrapper
-from agents.q_learning import ContinuousQLearning, QLearning
-from agents.r_learning import RLearning
+from smdp_agents.deep_q_wrapper import DeepQWrapper
+from smdp_agents.q_learning import ContinuousQLearning, QLearning
+from smdp_agents.r_learning import RLearning
 
 
 class DeepQWrapperTests(unittest.TestCase):
