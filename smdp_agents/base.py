@@ -38,6 +38,22 @@ class Agent:
             row.setdefault(action, default)
         return row
 
+    def save(self, path):
+        """Write this agent's complete state to ``path``.
+
+        Round-trips the table or network, the rate estimator, the optimiser, the
+        RNG and the step counters, so a loaded agent continues where this one
+        stopped. See :mod:`smdp_agents.checkpoint`.
+        """
+        from .checkpoint import save as _save
+        return _save(self, path)
+
+    @staticmethod
+    def load(path, **kwargs):
+        """Rebuild an agent saved by :meth:`save`. Returns its original class."""
+        from .checkpoint import load as _load
+        return _load(path, **kwargs)
+
     def __repr__(self):
         return f"Agent(name={self.name})"
 

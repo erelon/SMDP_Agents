@@ -209,6 +209,43 @@ steps   = agent.step_count                  # learn() calls since construction/r
 
 ---
 
+### 8. Saving and loading agents
+
+Every agent in the library — tabular or network — round-trips through one pair of
+calls:
+
+```python
+agent.save("run.pkl")
+agent = smdp_agents.checkpoint.load("run.pkl")   # returns its original class
+```
+
+A checkpoint holds the agent's *whole* state: the Q-table or the network, the
+rate estimator, the optimiser moments, the RNG and the step counters. A restored
+agent continues where it stopped rather than restarting with a fresh rate
+estimate — which is the failure a partial checkpoint produces, and it is silent,
+because the agent still runs and merely starts from the wrong place.
+
+Everything in the agent is saved *except* a short, named list (a live `env`
+reference, and the torch modules, which are handled separately). That exclusion
+is deliberate: a whitelist would be easier to read and would silently drop any
+attribute added later. An attribute that cannot be pickled raises at save time
+rather than disappearing.
+
+Weights are stored as numpy, not as pickled torch objects, so a checkpoint can be
+read by a different torch version.
+
+```python
+smdp_agents.checkpoint.load("run.pkl", restore_torch_rng=True)
+```
+
+torch's RNG is global rather than the agent's, but a network agent draws its
+actions and minibatch order from it. Pass `restore_torch_rng=True` for a
+step-for-step identical resume; the default leaves it alone, because loading an
+object should not reseed the interpreter behind your back.
+
+To import a policy trained by a *different* stack, see
+`smdp_agents.portable_policy`, which carries weights only.
+
 ## Algorithms
 
 | Class | Variant | Paper |
