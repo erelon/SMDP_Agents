@@ -7,9 +7,9 @@ from torch.distributions import Categorical
 from smdp_agents.average_rates import (NormalizedExponentialMovingTimeRate,
                                        WeightedHarmonicRate)
 from smdp_agents.gaussian_mlp import CategoricalMLP, GaussianMLP
-from smdp_agents.ppo import (PPO, ExperimentalWeightedHarmonicPPO, HarmonicPPO,
-                             RolloutBuffer, RsmartPPO, SmartPPO,
-                             SmoothedSmartPPO)
+from smdp_agents.ppo import PPO, RolloutBuffer
+from smdp_agents.smapo import (ExperimentalWeightedHarmonicSMAPO,
+                               RsmartSMAPO)
 
 
 class PPOTests(unittest.TestCase):
@@ -28,24 +28,6 @@ class PPOTests(unittest.TestCase):
         )
         self.assertTrue(torch.equal(advantage, torch.tensor([[3.0], [2.0]])))
         self.assertTrue(torch.equal(returns, advantage))
-
-    def test_ppo_rho_reduction_variants(self):
-        reward = torch.tensor([[2.0, -1.0], [4.0, 1.0]])
-        duration = torch.tensor([[1.0, 1.0], [2.0, 2.0]])
-        value = torch.tensor([[3.0, 1.0], [2.0, 2.0]])
-
-        smart = SmartPPO(1, 1, hidden=(2,), rho_lr=0.5)
-        smart.update_rho(reward, value, duration)
-        self.assertAlmostEqual(smart.rho, 6.0 / 6.0)
-        self.assertEqual(smart.value_bias, 2.0)
-
-        relaxed = RsmartPPO(1, 1, hidden=(2,), rho_lr=0.5)
-        relaxed.update_rho(reward, value, duration)
-        self.assertAlmostEqual(relaxed.rho, reward.mean().item() / duration.mean().item())
-
-        harmonic = HarmonicPPO(1, 1, hidden=(2,), rho_lr=0.5)
-        harmonic.update_rho(reward, value, duration)
-        self.assertTrue(math.isfinite(harmonic.rho))
 
     def test_small_ppo_update_returns_finite_stats(self):
         torch.manual_seed(4)
@@ -102,7 +84,7 @@ class SMDPDiscountTests(unittest.TestCase):
     def test_the_average_reward_variants_are_untouched_by_it(self):
         # discount == 1.0 makes gamma^tau == 1 for every tau, so holding time
         # reaches the objective only through rate_residual's -rho*tau.
-        agent = RsmartPPO(1, 1, hidden=(2,), gae_lambda=1.0, seed=0)
+        agent = RsmartSMAPO(1, 1, hidden=(2,), gae_lambda=1.0, seed=0)
         self.assertEqual(agent.discount, 1.0)
         agent.rho = 0.0
         reference = self.gae(agent, tau=1.0)
@@ -112,7 +94,7 @@ class SMDPDiscountTests(unittest.TestCase):
 
     def test_holding_time_still_reaches_rho_when_the_discount_is_inert(self):
         # The other half of the above: with gamma^tau == 1, tau must still bite.
-        agent = RsmartPPO(1, 1, hidden=(2,), gae_lambda=1.0, seed=0)
+        agent = RsmartSMAPO(1, 1, hidden=(2,), gae_lambda=1.0, seed=0)
         agent.rho = 1.0
         one, two = self.gae(agent, tau=1.0, steps=1), self.gae(agent, tau=2.0, steps=1)
         self.assertAlmostEqual(one.item(), 0.0)    # 0 - 1*1 + 1*1
@@ -121,7 +103,7 @@ class SMDPDiscountTests(unittest.TestCase):
     def test_it_composes_with_a_scaled_rate_residual(self):
         # gamma^tau must multiply the bootstrap only — the residual keeps whatever
         # rate_residual returns, including the |rho| scaling.
-        agent = ExperimentalWeightedHarmonicPPO(1, 1, hidden=(2,), seed=0)
+        agent = ExperimentalWeightedHarmonicSMAPO(1, 1, hidden=(2,), seed=0)
         agent.discount, agent.gae_lambda, agent.rho = 0.5, 1.0, 2.0
         advantage, _ = agent._gae(
             torch.tensor([[6.0]]), torch.zeros(1, 1), torch.ones(1, 1),
@@ -229,98 +211,6 @@ class DiscreteActorTests(unittest.TestCase):
                     - agent.entropy_loss_coeff * entropy)
         stats = agent.update(buffer, agent.value(final_obs))
         self.assertAlmostEqual(stats["loss"], expected.item(), places=5)
-
-
-class SmoothedSmartPPOTests(unittest.TestCase):
-    """The deep SmoothedSMART reuses the tabular time-decayed estimator."""
-
-    def build(self):
-        return SmoothedSmartPPO(2, 1, hidden=(4,), seed=0, rho_lr=0.2)
-
-    def test_it_is_an_average_reward_variant_fed_per_transition(self):
-        agent = self.build()
-        self.assertTrue(agent.longrun)
-        self.assertEqual(agent.discount, 1.0)
-        # Per-transition, not aggregated: the estimator decays by exp(-lambda*tau),
-        # so collapsing a batch to one (sum r, sum tau) is exact only when the rate
-        # is constant across it.
-        self.assertEqual(agent.rho_reduce, "none")
-
-    def test_rho_is_the_tabular_time_decayed_estimator(self):
-        agent = self.build()
-        self.assertIsInstance(agent.time_rate, NormalizedExponentialMovingTimeRate)
-        self.assertAlmostEqual(agent.lambda_, -math.log(1 - 0.2))
-        reference = NormalizedExponentialMovingTimeRate(0.2)
-        for reward, duration in ((4.0, 2.0), (1.0, 0.5), (9.0, 3.0)):
-            agent.calc_new_rho(reward, duration, None, None)
-            self.assertAlmostEqual(agent.rho, reference.update(reward, duration))
-
-    def test_update_rho_walks_the_batch_transition_by_transition(self):
-        agent = self.build()
-        reward = torch.tensor([[2.0, 6.0], [4.0, 1.0]])
-        duration = torch.tensor([[1.0, 3.0], [2.0, 0.5]])
-        agent.update_rho(reward, torch.zeros(2, 2), duration)
-        reference = NormalizedExponentialMovingTimeRate(0.2)
-        for r, t in zip(reward.reshape(-1).tolist(), duration.reshape(-1).tolist()):
-            reference.update(r, t)
-        self.assertAlmostEqual(agent.rho, reference.rho)
-
-    def test_it_keeps_the_plain_rate_residual(self):
-        agent = self.build()
-        agent.rho = 2.0
-        residual = agent.rate_residual(torch.tensor([6.0]), torch.tensor([2.0]))
-        self.assertAlmostEqual(residual.item(), 2.0)   # 6 - 2*2, unscaled
-
-
-class ExperimentalWeightedHarmonicPPOTests(unittest.TestCase):
-    """The |rho| scaling has to reach the GAE residual, not set_target."""
-
-    def build(self):
-        return ExperimentalWeightedHarmonicPPO(2, 1, hidden=(4,), seed=0, rho_lr=0.3)
-
-    def test_the_residual_is_divided_by_the_magnitude_of_rho(self):
-        agent, plain = self.build(), HarmonicPPO(2, 1, hidden=(4,), seed=0)
-        reward, duration = torch.tensor([6.0]), torch.tensor([2.0])
-        for rho in (2.0, -2.0):
-            with self.subTest(rho=rho):
-                agent.rho = plain.rho = rho
-                expected = (6.0 - rho * 2.0) / abs(rho)
-                self.assertAlmostEqual(agent.rate_residual(reward, duration).item(),
-                                       expected)
-                self.assertAlmostEqual(plain.rate_residual(reward, duration).item(),
-                                       6.0 - rho * 2.0)
-
-    def test_a_zero_rho_falls_back_instead_of_dividing(self):
-        agent = self.build()
-        self.assertEqual(agent.rho, 0.0)
-        self.assertAlmostEqual(
-            agent.rate_residual(torch.tensor([6.0]), torch.tensor([2.0])).item(), 6.0)
-
-    def test_the_scaling_reaches_gae_rather_than_being_ignored(self):
-        # PPO never calls set_target, so an override there would be silent. This is
-        # the test that would catch that regression.
-        agent, plain = self.build(), HarmonicPPO(2, 1, hidden=(4,), seed=0)
-        args = (torch.tensor([[4.0]]), torch.zeros(1, 1), torch.ones(1, 1),
-                torch.tensor([0.0]), torch.tensor([[2.0]]))
-        for a in (agent, plain):
-            a.discount, a.gae_lambda, a.rho = 1.0, 1.0, 2.0
-        scaled, _ = agent._gae(*args)
-        unscaled, _ = plain._gae(*args)
-        self.assertAlmostEqual(scaled.item(), 0.0)      # (4 - 4)/2
-        self.assertAlmostEqual(unscaled.item(), 0.0)
-        for a in (agent, plain):
-            a.rho = 0.5
-        self.assertAlmostEqual(agent._gae(*args)[0].item(), 6.0)    # (4 - 1)/0.5
-        self.assertAlmostEqual(plain._gae(*args)[0].item(), 3.0)    # 4 - 1
-
-    def test_rho_is_the_reward_weighted_harmonic_estimator(self):
-        agent = self.build()
-        self.assertIsInstance(agent.hma, WeightedHarmonicRate)
-        self.assertEqual(agent.rho_reduce, "none")
-        reference = WeightedHarmonicRate(0.3)
-        for reward, duration in ((4.0, 2.0), (-1.0, 1.0), (3.0, 2.0)):
-            agent.calc_new_rho(reward, duration, None, None)
-            self.assertAlmostEqual(agent.rho, reference.update(reward, duration, reward))
 
 
 if __name__ == "__main__":

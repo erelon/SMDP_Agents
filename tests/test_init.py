@@ -19,7 +19,7 @@ class PackageImportTests(unittest.TestCase):
             cwd=ROOT, text=True, capture_output=True
         )
         self.assertEqual(result.returncode, 0, result.stderr)
-        for name in ("DeepQWrapper", "HarmonicPPO", "SMART", "RelaxedSMART", "UCB"):
+        for name in ("DeepQWrapper", "HarmonicSMAPO", "SMART", "RelaxedSMART", "UCB"):
             self.assertIn(name, result.stdout)
 
 

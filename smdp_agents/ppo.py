@@ -1,52 +1,33 @@
-"""PPO and its average-reward (SMDP) variants — pure torch, agent-only.
+"""PPO and the rollout buffer it trains on — pure torch, agent-only.
 
-One PPO core (clipped surrogate + GAE) plus an average-reward correction whose
-long-run rate ``rho`` is estimated by REUSING the tabular agents' ``calc_new_rho``
-via multiple inheritance — so the rho logic lives in exactly one place and is
-shared by the tabular and deep agents alike:
+The discounted baseline, and the core every average-reward agent builds on. The
+average-reward machinery lives here rather than in the subclasses because the
+hooks have to sit in the update path: ``update_rho`` refreshes the rate each
+batch, ``rate_residual`` is the only place the rate enters the objective, and
+``shape_advantage`` conditions the advantage before the optimisation epochs.
+With ``longrun = False`` all three are inert and this is textbook PPO. The
+average-reward agents themselves are in :mod:`smdp_agents.smapo`.
 
-    PPO          discounted PPO, no correction        (longrun=False)
-    RsmartPPO    (PPO, RelaxedSMART)  rho = EWMA(reward)/EWMA(time)   [APO]
-    SmartPPO     (PPO, SMART)         rho = Σreward/Σtime
-    HarmonicPPO  (PPO, Harmonic)      rho = harmonic mean of reward/time
-    SmoothedSmartPPO                  rho smoothed in elapsed time
-    ExperimentalWeightedHarmonicPPO   rho as WeightedHarmonic, residual / |rho|
-
-Adding a variant is one line — inherit the deep core and a tabular rho agent,
-and pick how the batch feeds the rho updater (``rho_reduce``):
-
-    class WeightedHarmonicPPO(PPO, WeightedHarmonic):
-        longrun = True
-        rho_reduce = "none"          # per-transition (needs each reward's sign)
-
-``rho`` is updated each batch via the inherited ``calc_new_rho``: Rsmart/Smart
-aggregate the batch (mean / sum -> one O(1) call), Harmonic iterates per
-transition. ``time`` is the per-step dwell (1.0 = MDP, macro-step duration =
-SMDP). Defaults match this project's configuration.
-
-``time`` enters the GAE recursion twice: through the ``- rho*tau`` correction
-(see ``rate_residual``) and through the SMDP discount ``gamma^tau``, which
-replaces the flat ``gamma`` so a macro-step is discounted as the ``tau``
-primitive steps it stands in for. Both reduce to the MDP case at ``tau == 1``,
-and ``gamma^tau == 1`` for the average-reward variants (``discount=1.0``).
+The holding time ``time`` (``1.0`` for an MDP, the macro-step duration for an
+SMDP) feeds the GAE recursion twice: through ``rate_residual``'s ``- rho*tau``
+correction, and through the SMDP discount ``gamma^tau``, which replaces the flat
+``gamma`` so a macro-step is discounted as the ``tau`` primitive steps it stands
+in for. ``gamma^tau == 1`` for the average-reward agents (``discount=1.0``).
 
 Either actor head works: the default is a diagonal Gaussian; ``discrete=True``
-swaps in a categorical over ``act_dim`` options. Only sampling, log-prob and
-entropy differ — the rho, GAE and surrogate machinery is shared.
+swaps in a categorical one over ``act_dim`` options.
 
-You provide the env loop; the agents are env-agnostic (torch + numpy):
+You provide the environment loop; the agents are env-agnostic (torch + numpy)::
 
-    agent = RsmartPPO(obs_dim, act_dim)
+    agent = PPO(obs_dim, act_dim)
     buf = RolloutBuffer()
-    obs = envs.reset()                                   # [B, obs_dim]
-    for itr in range(n_itr):
-        buf.clear()
-        for t in range(agent.batch_T):
-            action, value, logp = agent.act(obs)
-            next_obs, reward, terminated, truncated, _ = envs.step(action.numpy())
-            buf.add(obs, action, reward, terminated, truncated, value, logp)
-            obs = next_obs
-        agent.update(buf, agent.value(obs))              # bootstrap from final obs
+    for _ in range(batch_T):
+        action, value, logp = agent.act(obs)
+        nxt, reward, terminated, truncated, info = env.step(action)
+        buf.add(obs, action, reward, terminated, truncated, value, logp,
+                time=info.get("tau", 1.0))
+        obs = nxt
+    stats = agent.update(buf, bootstrap_value=agent.value(obs))
 """
 import numpy as np
 import torch
@@ -56,11 +37,6 @@ from torch.distributions import Categorical
 from .base import Agent
 from .gaussian_mlp import (CategoricalMLP, GaussianMLP, gaussian_entropy,
                            gaussian_logp)
-from .experemental_harmonic_r import (ExperimentalWeightedHarmonic,
-                                      abs_rho_scaled_advantage)
-from .harmonic_r import Harmonic
-from .smart_r import SMART, SmoothedSMART
-from .relaxed_smart import RelaxedSMART
 
 
 def _t(x, device):
@@ -207,6 +183,28 @@ class PPO(Agent):
         else:  # "mean"
             self.calc_new_rho(r.mean().item(), t.mean().item(), None, None)
 
+    @torch.no_grad()
+    def policy_entropy(self, obs):
+        """Mean entropy of the behaviour policy over a batch of observations.
+
+        Works for either head, so callers need not know which is in use.
+        """
+        if self.discrete:
+            return float(Categorical(logits=self.net(obs)[0]).entropy().mean().item())
+        return float(gaussian_entropy(self.net(obs)[1]).mean().item())
+
+    def shape_advantage(self, adv, valid, batch):
+        """Transform the advantage after GAE and before the optimisation epochs.
+
+        The extension point variants use to add advantage conditioning; plain PPO
+        only offers the optional z-score. ``batch`` is the stacked rollout, so an
+        override may also read the observations or the dwell.
+        """
+        if self.normalize_advantage:
+            m = valid > 0
+            adv = (adv - adv[m].mean()) / (adv[m].std() + 1e-6)
+        return adv
+
     def rate_residual(self, reward, time):
         """The average-reward correction inside the TD residual: ``r - rho*tau``.
 
@@ -245,9 +243,7 @@ class PPO(Agent):
         ret = ret - self.rm_vbias_coeff * (self.value_bias or 0.0)
 
         valid = (1.0 - b["trunc"]) if self.bootstrap_timelimit else torch.ones_like(reward)
-        if self.normalize_advantage:
-            m = valid > 0
-            adv = (adv - adv[m].mean()) / (adv[m].std() + 1e-6)
+        adv = self.shape_advantage(adv, valid, b)
 
         obs = b["obs"].reshape(-1, b["obs"].shape[-1])
         # discrete: action is a scalar option index per transition; continuous: a vector.
@@ -282,55 +278,3 @@ class PPO(Agent):
                 stats["entropy"].append(entropy.item())
         return {"rho": self.rho, "value_bias": self.value_bias or 0.0,
                 **{k: float(np.mean(v)) for k, v in stats.items()}}
-
-
-class RsmartPPO(PPO, RelaxedSMART):
-    """APO / Relaxed-SMART: rho = EWMA(reward) / EWMA(time), per batch."""
-    longrun = True
-    rho_reduce = "mean"
-
-
-class SmartPPO(PPO, SMART):
-    """SMART: rho = Σreward / Σtime (cumulative running average)."""
-    longrun = True
-    rho_reduce = "sum"
-
-
-class HarmonicPPO(PPO, Harmonic):
-    """Harmonic-mean rho over the positive/negative reward streams."""
-    longrun = True
-    rho_reduce = "none"  # per-transition: the pos/neg split needs each reward
-
-
-class SmoothedSmartPPO(PPO, SmoothedSMART):
-    """SmoothedSMART: rho smoothed in *elapsed time* rather than per transition.
-
-    ``rho_reduce="none"`` because the estimator's whole point is that it decays by
-    ``exp(-lambda*tau)`` per transition. Aggregating with ``"sum"`` is tempting and
-    nearly right — by segmentation invariance, one update with ``(sum r, sum tau)``
-    is *exactly* a batch of sub-steps covering the same time at the same rate — but
-    only when the rate is constant across the batch, which is not something a
-    rollout guarantees. Per-transition is the faithful reduction.
-    """
-    longrun = True
-    rho_reduce = "none"
-
-
-class ExperimentalWeightedHarmonicPPO(PPO, ExperimentalWeightedHarmonic):
-    """``WeightedHarmonic``'s rho with the TD correction divided by ``|rho|``.
-
-    The deep counterpart of :class:`~smdp_agents.experemental_harmonic_r.\
-ExperimentalWeightedHarmonic`. Still experimental — see that module for what the
-    scaling does and does not buy.
-    """
-    longrun = True
-    rho_reduce = "none"  # weight = reward, so the pos/neg split needs each reward
-
-    def rate_residual(self, reward, time):
-        """``(r - rho*tau) / |rho|``, the same formula the tabular agent applies.
-
-        Spelled out rather than inherited: ``PPO`` precedes ``AbsRhoScaledTarget``
-        in this class's MRO, so the mixin's ``set_target`` is never consulted here
-        and the base ``rate_residual`` would otherwise win.
-        """
-        return abs_rho_scaled_advantage(reward, time, self.rho)

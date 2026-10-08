@@ -10,8 +10,16 @@ from .harmonic_r import (CumulativeHarmonic, CumulativeWeightedHarmonic,
 from .experemental_harmonic_r import (ExperimentalCumulativeWeightedHarmonic,
                                       ExperimentalWeightedHarmonic)
 from .deep_q_wrapper import DeepQWrapper
-from .ppo import (PPO, RsmartPPO, SmartPPO, HarmonicPPO, SmoothedSmartPPO,
-                  ExperimentalWeightedHarmonicPPO, RolloutBuffer)
+from .gaussian_mlp import CategoricalMLP, GaussianMLP
+from .ppo import PPO, RolloutBuffer
+from .smapo import (APO, SMAPO, CumulativeHarmonicSMAPO,
+                    CumulativeWeightedHarmonicSMAPO, DiscreteAPO,
+                    DiscreteHarmonicSMAPO, DiscreteRsmartSMAPO,
+                    DiscreteSmartSMAPO, DiscreteSmoothedSmartSMAPO,
+                    ExperimentalCumulativeWeightedHarmonicSMAPO,
+                    ExperimentalWeightedHarmonicSMAPO, HarmonicSMAPO,
+                    RsmartSMAPO, SmartSMAPO, SmoothedSmartSMAPO,
+                    WeightedHarmonicSMAPO)
 from .mab_epsilon import EpsilonGreedyMAB, ContinuousEpsilonGreedyMAB
 from .mab_ucb import UCB, ContinuosUCB
 
@@ -27,6 +35,13 @@ __all__ = [
     'ExperimentalWeightedHarmonic', 'ExperimentalCumulativeWeightedHarmonic',
     'EpsilonGreedyMAB', 'ContinuousEpsilonGreedyMAB', 'UCB', 'ContinuosUCB',
     'DeepQWrapper',
-    'PPO', 'RsmartPPO', 'SmartPPO', 'HarmonicPPO', 'SmoothedSmartPPO',
-    'ExperimentalWeightedHarmonicPPO', 'RolloutBuffer',
+    'SMAPO', 'APO', 'RsmartSMAPO', 'SmartSMAPO', 'HarmonicSMAPO',
+    'SmoothedSmartSMAPO', 'WeightedHarmonicSMAPO', 'CumulativeHarmonicSMAPO',
+    'CumulativeWeightedHarmonicSMAPO', 'ExperimentalWeightedHarmonicSMAPO',
+    'ExperimentalCumulativeWeightedHarmonicSMAPO',
+    'DiscreteAPO', 'DiscreteRsmartSMAPO', 'DiscreteSmartSMAPO',
+    'DiscreteHarmonicSMAPO', 'DiscreteSmoothedSmartSMAPO',
+    'GaussianMLP', 'CategoricalMLP',
+    'PPO',
+    'RolloutBuffer',
 ]

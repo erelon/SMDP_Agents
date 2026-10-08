@@ -110,14 +110,15 @@ agent = DeepQWrapper(
 )
 ```
 
-### 6. PPO and its average-reward variants
+### 6. PPO
 
-The PPO agents are env-agnostic (torch + numpy); you provide the rollout loop. Each average-reward variant reuses a tabular agent's `calc_new_rho` through multiple inheritance, so the rate logic lives in exactly one place.
+The discounted baseline, and the core every average-reward agent builds on. It is
+env-agnostic (torch + numpy); you provide the rollout loop.
 
 ```python
-from smdp_agents import RsmartPPO, RolloutBuffer
+from smdp_agents import PPO, RolloutBuffer
 
-agent = RsmartPPO(obs_dim, act_dim)
+agent = PPO(obs_dim, act_dim)
 buf = RolloutBuffer()
 obs = envs.reset()                                   # [B, obs_dim]
 for itr in range(n_itr):
@@ -130,23 +131,71 @@ for itr in range(n_itr):
     stats = agent.update(buf, agent.value(obs))      # bootstrap from the final obs
 ```
 
-`buf.add(..., time=)` is the per-step dwell (`1.0` for an MDP, the macro-step duration for an SMDP). It feeds the GAE recursion twice: through the `- \rho\tau` rate correction, and through the SMDP discount `\gamma^\tau`, which replaces the flat `\gamma` so that a macro-step of duration `\tau` is discounted as the `\tau` primitive steps it stands in for. For a discounted agent on variable-duration steps this is a real change — with `\gamma = 0.99` a `\tau = 50` option now carries `0.605` rather than `0.99`. Average-reward variants default to `discount=1.0`, where `\gamma^\tau = 1` and the holding time enters only through `rate_residual`.
+`buf.add(..., time=)` is the per-step dwell (`1.0` for an MDP, the macro-step duration for an SMDP). It feeds the GAE recursion twice: through the `- \rho\tau` rate correction, and through the SMDP discount `\gamma^\tau`, which replaces the flat `\gamma` so that a macro-step of duration `\tau` is discounted as the `\tau` primitive steps it stands in for. For a discounted agent on variable-duration steps this is a real change — with `\gamma = 0.99` a `\tau = 50` option now carries `0.605` rather than `0.99`. Average-reward agents default to `discount=1.0`, where `\gamma^\tau = 1` and the holding time enters only through `rate_residual`.
 
 Pass `discrete=True` for a categorical actor over `act_dim` options instead of the default diagonal-Gaussian one; `act()` then returns `int64` option indices and `eval_act()` the argmax. Everything else — the rate machinery, GAE, the clipped surrogate — is distribution-agnostic and shared.
 
 ```python
-agent = RsmartPPO(obs_dim, n_options, discrete=True)
+agent = RsmartSMAPO(obs_dim, n_options, discrete=True)
 ```
 
-Adding a variant is one line — inherit the deep core plus a tabular rate agent, and pick how a batch feeds the rate updater via `rho_reduce` (`"mean"`, `"sum"`, or `"none"` for per-transition):
+### 6b. SMAPO — average-reward policy optimisation for SMDPs
+
+`SMAPO` optimises the long-run reward **rate**. It is PPO's clipped surrogate
+with three changes and nothing else:
+
+1. **No discounting** (`gamma = 1`); the TD residual carries `r - rho*tau`.
+2. **A-centering** — the batch advantage is centred on its own mean. Any
+   estimate of `rho` has tracking error, and that error enters every advantage
+   in the batch as a *shared* offset: zero-mean noise averages out over an epoch
+   of minibatches, a shared offset accumulates. Subtracting the batch mean
+   removes it without changing the ranking of actions.
+3. **Calibrated entropy pressure** — the entropy bonus is specified as the ratio
+   `p = c_H / std(A)` rather than as an absolute coefficient, and is re-derived
+   as the advantage scale moves. A fixed coefficient is a fixed force against a
+   moving one, so it means something different on every task and at every point
+   of a run.
+
+Adding a variant is one line — inherit `SMAPO` plus a tabular rate agent, and
+pick how a batch feeds the rate updater via `rho_reduce` (`"mean"`, `"sum"`, or
+`"none"` for per-transition):
 
 ```python
-class WeightedHarmonicPPO(PPO, WeightedHarmonic):
-    longrun = True
-    rho_reduce = "none"      # the pos/neg split needs each reward's sign
+from smdp_agents import RsmartSMAPO, RolloutBuffer
+
+agent = RsmartSMAPO(obs_dim, act_dim)          # Gaussian policy
+buf = RolloutBuffer()
+for _ in range(batch_T):
+    action, value, logp = agent.act(obs)
+    nxt, reward, terminated, truncated, info = env.step(action)
+    buf.add(obs, action, reward, terminated, truncated, value, logp,
+            time=info["tau"])                  # <- the holding time
+    obs = nxt
+stats = agent.update(buf, bootstrap_value=agent.value(obs))
 ```
 
-A variant that changes the *correction* rather than the rate overrides `rate_residual`, which is where `r - \rho\tau` enters the GAE recursion. That hook matters: PPO never calls the tabular `set_target`, so overriding that instead would compile, run, and silently do nothing.
+| variant | `rho` |
+|---|---|
+| `APO` | `EWMA(reward)`; duration ignored (`tau == 1`) |
+| `RsmartSMAPO` | `EWMA(reward) / EWMA(tau)` |
+| `SmartSMAPO` | `sum(reward) / sum(tau)` — never forgets |
+| `SmoothedSmartSMAPO` | smoothed in *elapsed time*, not per transition |
+
+The rest of the harmonic family has SMAPO agents too — weighted, cumulative, and
+the two whose residual is divided by $|\rho|$ — listed in the algorithm table below.
+
+Each has a `Discrete*` convenience class (`DiscreteRsmartSMAPO`, …) that presets
+`discrete=True`; `act_dim` is then the number of options and evaluation is the
+argmax.
+
+**`time` is load-bearing.** It is the per-decision holding time — `1.0` for an
+MDP, the macro-step duration for an SMDP. It defaults to `1.0`, so omitting it
+silently reduces every rate estimator to its MDP special case.
+
+`entropy_pressure` is the hyperparameter to search. It is environment-specific;
+there is no universal value, and the default here is a placeholder.
+
+See `SMAPO_EXTRACTION.md` for what this implementation deliberately leaves out.
 
 ### 7. Policy change tracking
 
@@ -183,11 +232,16 @@ steps   = agent.step_count                  # learn() calls since construction/r
 | `ContinuosUCB` | UCB with time-averaged rewards (SMDP) | — |
 | `DeepQWrapper` | Neural network Q-function around any of the above | Mnih et al., [*Human-level control through deep reinforcement learning*](https://www.nature.com/articles/nature14236), Nature 2015 |
 | `PPO` | Clipped-surrogate PPO with GAE (discounted, no rate correction) | Schulman et al., [*Proximal Policy Optimization Algorithms*](https://arxiv.org/abs/1707.06347), 2017 |
-| `SmartPPO` | PPO with the SMART cumulative rate correction | Das et al. 1999 (rate) + Schulman et al. 2017 |
-| `RsmartPPO` | PPO with the Relaxed SMART smoothed rate correction (APO) | Gosavi 2004 (rate) + Schulman et al. 2017 |
-| `HarmonicPPO` | PPO with the Harmonic Moving Average rate correction | Shtossel et al. 2026 (rate) + Schulman et al. 2017 |
-| `SmoothedSmartPPO` | PPO with the elapsed-time smoothed rate correction | — |
-| `ExperimentalWeightedHarmonicPPO` | PPO with the reward-weighted harmonic rate, residual divided by $\|\rho\|$ | — |
+| `SMAPO` | Average-reward policy optimisation for SMDPs: undiscounted, A-centered advantage, calibrated entropy pressure | Shtossel et al. 2026 |
+| `APO` | SMAPO with duration ignored (`tau == 1`) | Gosavi 2004 (rate) + Schulman et al. 2017 |
+| `SmartSMAPO` | SMAPO with the SMART cumulative rate | Das et al. 1999 (rate) |
+| `RsmartSMAPO` | SMAPO with the Relaxed SMART smoothed rate | Gosavi 2004 (rate) |
+| `HarmonicSMAPO` | SMAPO with the Harmonic Moving Average rate | Shtossel et al. 2026 (rate) |
+| `WeightedHarmonicSMAPO` | SMAPO with the reward-weighted HMA rate | Shtossel et al. 2026 (rate) |
+| `CumulativeHarmonicSMAPO`, `CumulativeWeightedHarmonicSMAPO` | the same over the whole run, without forgetting | — |
+| `ExperimentalWeightedHarmonicSMAPO`, `ExperimentalCumulativeWeightedHarmonicSMAPO` | weighted HMA rate, residual divided by $\|\rho\|$ | — |
+| `SmoothedSmartSMAPO` | SMAPO with the elapsed-time smoothed rate | — |
+| `Discrete*SMAPO` | the same agents over a discrete action space (`discrete=True`) | — |
 | `RandomAgent` | Uniformly random baseline | — |
 | `Oracle` | Optimal-action oracle (requires environment secret) | — |
 
@@ -311,6 +365,30 @@ python -m examples.run --all --seeds 8      # the full sweep -> examples/results
 python -m examples.make_report              # -> examples/results/REPORT.md
 python -m examples.make_plots               # -> examples/results/plots/*.png
 ```
+
+### MuJoCo locomotion as an SMDP
+
+`examples/envs/mujoco_smdp.py` has Swimmer and Ant with a macro-step interface:
+the action is a joint-angle TARGET, the simulation runs until the joint reaches
+it, and the number of physics frames that took is the holding time, returned in
+`info["tau"]`. A small move finishes in a frame or two, a large one takes tens,
+so holding time varies with the action — which is what separates reward per unit
+time from reward per decision.
+
+```python
+from examples.envs.mujoco_smdp import make_swimmer, make_ant
+
+env = make_swimmer()                 # continuing: never terminates, no time limit
+obs, _ = env.reset(seed=0)
+obs, reward, terminated, truncated, info = env.step(action)
+tau = info["tau"]                    # physics frames this decision consumed
+```
+
+Needs `gymnasium[mujoco]`, which is an OPTIONAL requirement: this module is not
+imported by `examples/envs/__init__.py`, so the rest of the library works
+without it. Ant can terminate and Swimmer cannot — compare agents on a
+discount-free quantity when an environment can end.
+
 
 An environment there is a Gymnasium environment that reports the holding time of
 each action in `info["tau"]`, plus `state_of(obs)` for a hashable state,
