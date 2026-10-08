@@ -102,14 +102,15 @@ agent = DeepQWrapper(
 )
 ```
 
-### 6. PPO and its average-reward variants
+### 6. PPO
 
-The PPO agents are env-agnostic (torch + numpy); you provide the rollout loop. Each average-reward variant reuses a tabular agent's `calc_new_rho` through multiple inheritance, so the rate logic lives in exactly one place.
+The discounted baseline, and the core every average-reward agent builds on. It is
+env-agnostic (torch + numpy); you provide the rollout loop.
 
 ```python
-from agents import RsmartPPO, RolloutBuffer
+from agents import PPO, RolloutBuffer
 
-agent = RsmartPPO(obs_dim, act_dim)
+agent = PPO(obs_dim, act_dim)
 buf = RolloutBuffer()
 obs = envs.reset()                                   # [B, obs_dim]
 for itr in range(n_itr):
@@ -122,15 +123,10 @@ for itr in range(n_itr):
     stats = agent.update(buf, agent.value(obs))      # bootstrap from the final obs
 ```
 
-`buf.add(..., time=)` is the per-step dwell (`1.0` for an MDP, the macro-step duration for an SMDP). Adding a variant is one line — inherit the deep core plus a tabular rate agent, and pick how a batch feeds the rate updater via `rho_reduce` (`"mean"`, `"sum"`, or `"none"` for per-transition):
+The action space is owned by a *head*, so PPO itself never mentions a Gaussian or
+a softmax: `GaussianHead` (the default) or `CategoricalHead` for discrete control.
 
-```python
-class WeightedHarmonicPPO(PPO, WeightedHarmonic):
-    longrun = True
-    rho_reduce = "none"      # the pos/neg split needs each reward's sign
-```
-
-A variant that changes the *correction* rather than the rate overrides `rate_residual`, which is where `r - \rho\tau` enters the GAE recursion. That hook matters: PPO never calls the tabular `set_target`, so overriding that instead would compile, run, and silently do nothing.
+For the average-reward agents, see SMAPO below.
 
 ### 6b. SMAPO — average-reward policy optimisation for SMDPs
 
@@ -220,11 +216,13 @@ steps   = agent.step_count                  # learn() calls since construction/r
 | `ContinuosUCB` | UCB with time-averaged rewards (SMDP) | — |
 | `DeepQWrapper` | Neural network Q-function around any of the above | Mnih et al., [*Human-level control through deep reinforcement learning*](https://www.nature.com/articles/nature14236), Nature 2015 |
 | `PPO` | Clipped-surrogate PPO with GAE (discounted, no rate correction) | Schulman et al., [*Proximal Policy Optimization Algorithms*](https://arxiv.org/abs/1707.06347), 2017 |
-| `SmartPPO` | PPO with the SMART cumulative rate correction | Das et al. 1999 (rate) + Schulman et al. 2017 |
-| `RsmartPPO` | PPO with the Relaxed SMART smoothed rate correction (APO) | Gosavi 2004 (rate) + Schulman et al. 2017 |
-| `HarmonicPPO` | PPO with the Harmonic Moving Average rate correction | Shtossel et al. 2026 (rate) + Schulman et al. 2017 |
-| `SmoothedSmartPPO` | PPO with the elapsed-time smoothed rate correction | — |
-| `ExperimentalWeightedHarmonicPPO` | PPO with the reward-weighted harmonic rate, residual divided by $\|\rho\|$ | — |
+| `SMAPO` | Average-reward policy optimisation for SMDPs: undiscounted, A-centered advantage, calibrated entropy pressure | Shtossel et al. 2026 |
+| `APO` | SMAPO with duration ignored (`tau == 1`) | Gosavi 2004 (rate) + Schulman et al. 2017 |
+| `SmartSMAPO` | SMAPO with the SMART cumulative rate | Das et al. 1999 (rate) |
+| `RsmartSMAPO` | SMAPO with the Relaxed SMART smoothed rate | Gosavi 2004 (rate) |
+| `HarmonicSMAPO` | SMAPO with the Harmonic Moving Average rate | Shtossel et al. 2026 (rate) |
+| `SmoothedSmartSMAPO` | SMAPO with the elapsed-time smoothed rate | — |
+| `Discrete*SMAPO` | the same four over a discrete action space (`CategoricalHead`) | — |
 | `RandomAgent` | Uniformly random baseline | — |
 | `Oracle` | Optimal-action oracle (requires environment secret) | — |
 

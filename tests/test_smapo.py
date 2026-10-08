@@ -5,8 +5,9 @@ import torch
 
 from agents.policy_heads import CategoricalHead, GaussianHead
 from agents.ppo import RolloutBuffer
-from agents.smapo import (APO, DiscreteRsmartSMAPO, RsmartSMAPO, SmartSMAPO,
-                          SmoothedSmartSMAPO)
+from agents.average_rates import NormalizedExponentialMovingTimeRate
+from agents.smapo import (APO, DiscreteRsmartSMAPO, HarmonicSMAPO, RsmartSMAPO,
+                          SmartSMAPO, SmoothedSmartSMAPO)
 
 OBS, ACT, T, B = 4, 2, 12, 3
 
@@ -26,7 +27,8 @@ def rollout(agent, obs_dim=OBS, n=T, b=B, tau=2.0, seed=0):
 class SMAPOTests(unittest.TestCase):
 
     def test_every_variant_updates(self):
-        for cls in (APO, RsmartSMAPO, SmartSMAPO, SmoothedSmartSMAPO):
+        for cls in (APO, RsmartSMAPO, SmartSMAPO, HarmonicSMAPO,
+                    SmoothedSmartSMAPO):
             agent = cls(OBS, ACT, seed=0)
             buf, bv = rollout(agent)
             stats = agent.update(buf, bv)
@@ -139,6 +141,100 @@ class SMAPOTests(unittest.TestCase):
 
     def test_continuous_default_is_gaussian(self):
         self.assertIsInstance(RsmartSMAPO(OBS, ACT, seed=0), GaussianHead)
+
+
+class RateEstimatorTests(unittest.TestCase):
+    """Each variant feeds the batch to its estimator the way that estimator needs."""
+
+    def test_rho_reduction_per_variant(self):
+        reward = torch.tensor([[2.0, -1.0], [4.0, 1.0]])
+        duration = torch.tensor([[1.0, 1.0], [2.0, 2.0]])
+        value = torch.tensor([[3.0, 1.0], [2.0, 2.0]])
+
+        smart = SmartSMAPO(1, 1, hidden=(2,), rho_lr=0.5)
+        smart.update_rho(reward, value, duration)
+        self.assertAlmostEqual(smart.rho, 6.0 / 6.0)      # sum r / sum tau
+        self.assertEqual(smart.value_bias, 2.0)
+
+        rsmart = RsmartSMAPO(1, 1, hidden=(2,), rho_lr=0.5)
+        rsmart.update_rho(reward, value, duration)
+        self.assertAlmostEqual(rsmart.rho,
+                               reward.mean().item() / duration.mean().item())
+
+        harmonic = HarmonicSMAPO(1, 1, hidden=(2,), rho_lr=0.5)
+        harmonic.update_rho(reward, value, duration)
+        self.assertTrue(math.isfinite(harmonic.rho))
+
+    def test_apo_rate_ignores_duration(self):
+        reward = torch.tensor([[2.0, -1.0], [4.0, 1.0]])
+        duration = torch.tensor([[7.0, 7.0], [7.0, 7.0]])
+        apo = APO(1, 1, hidden=(2,), rho_lr=0.5)
+        apo.update_rho(reward, torch.zeros(2, 2), duration)
+        self.assertAlmostEqual(apo.rho, reward.mean().item())   # tau == 1
+
+
+class SmoothedSmartSMAPOTests(unittest.TestCase):
+    """The deep SmoothedSMART reuses the tabular time-decayed estimator."""
+
+    def build(self):
+        return SmoothedSmartSMAPO(2, 1, hidden=(4,), seed=0, rho_lr=0.2)
+
+    def test_it_is_an_average_reward_variant_fed_per_transition(self):
+        agent = self.build()
+        self.assertTrue(agent.longrun)
+        self.assertEqual(agent.discount, 1.0)
+        self.assertEqual(agent.rho_reduce, "none")
+
+    def test_rho_is_the_tabular_time_decayed_estimator(self):
+        agent = self.build()
+        self.assertIsInstance(agent.time_rate, NormalizedExponentialMovingTimeRate)
+        self.assertAlmostEqual(agent.lambda_, -math.log(1 - 0.2))
+        reference = NormalizedExponentialMovingTimeRate(0.2)
+        for reward, duration in ((4.0, 2.0), (1.0, 0.5), (9.0, 3.0)):
+            agent.calc_new_rho(reward, duration, None, None)
+            self.assertAlmostEqual(agent.rho, reference.update(reward, duration))
+
+    def test_update_rho_walks_the_batch_transition_by_transition(self):
+        agent = self.build()
+        reward = torch.tensor([[2.0, 6.0], [4.0, 1.0]])
+        duration = torch.tensor([[1.0, 3.0], [2.0, 0.5]])
+        agent.update_rho(reward, torch.zeros(2, 2), duration)
+        reference = NormalizedExponentialMovingTimeRate(0.2)
+        for r, t in zip(reward.reshape(-1).tolist(), duration.reshape(-1).tolist()):
+            reference.update(r, t)
+        self.assertAlmostEqual(agent.rho, reference.rho)
+
+    def test_it_keeps_the_plain_rate_residual(self):
+        agent = self.build()
+        agent.rho = 2.0
+        residual = agent.rate_residual(torch.tensor([6.0]), torch.tensor([2.0]))
+        self.assertAlmostEqual(residual.item(), 2.0)       # 6 - 2*2, unscaled
+
+
+class ToggleTests(unittest.TestCase):
+    """Both changes SMAPO adds can be switched off independently."""
+
+    def setUp(self):
+        self.adv = torch.randn(T, B, generator=torch.Generator().manual_seed(9)) + 4.0
+        self.valid = torch.ones(T, B)
+        self.batch = {"obs": torch.randn(T, B, OBS), "rew": torch.zeros(T, B),
+                      "time": torch.full((T, B), 2.0)}
+
+    def test_a_centering_off_leaves_the_offset(self):
+        agent = RsmartSMAPO(OBS, ACT, seed=0, a_centering=False)
+        out = agent.shape_advantage(self.adv.clone(), self.valid, self.batch)
+        self.assertGreater(abs(float(out.mean())), 1.0)
+
+    def test_calibrated_pressure_off_keeps_a_fixed_coefficient(self):
+        agent = RsmartSMAPO(OBS, ACT, seed=0, calibrated_pressure=False,
+                            entropy_loss_coeff=0.01, entropy_warmup_iters=1)
+        for _ in range(3):
+            agent.shape_advantage(self.adv.clone(), self.valid, self.batch)
+        self.assertEqual(agent.entropy_loss_coeff, 0.01)
+
+    def test_zero_pressure_is_rejected_rather_than_silently_disabling(self):
+        with self.assertRaises(ValueError):
+            RsmartSMAPO(OBS, ACT, entropy_pressure=0.0)
 
 
 if __name__ == "__main__":

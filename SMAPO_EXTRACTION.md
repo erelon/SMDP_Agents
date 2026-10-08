@@ -88,17 +88,25 @@ that live in the experiment repo, not here.
 To reproduce a MuJoCo figure, this library needs an environment that exposes the
 holding time in `info` and a rollout loop; the agents themselves are env-agnostic.
 
-## 5. Open questions for the maintainer
+## 5. Resolved while extracting
 
-1. **`HarmonicPPO`, `ExperimentalWeightedHarmonicPPO` and the cumulative/weighted
-   harmonic rate estimators.** These predate this work and are not in the paper
-   — its `\harmonic` macros are defined but used zero times in any body file. I
-   left them untouched rather than delete prior work. Remove them, or keep them
-   as a separate line of work?
-2. **`RsmartPPO`, `SmartPPO`, `SmoothedSmartPPO` in `agents/ppo.py`** are the
-   pre-final versions of the same agents: same rate estimators, no A-centering
-   and no pressure. They are now superseded by the SMAPO variants. Keep as a
-   documented baseline (they are what the "no fixes" panels run), or remove?
-3. **The default `entropy_pressure = 0.02`** is a placeholder. The value is
+1. **The pre-SMAPO deep variants are gone.** `RsmartPPO`, `SmartPPO`,
+   `HarmonicPPO`, `SmoothedSmartPPO` and `ExperimentalWeightedHarmonicPPO` were
+   the same rate estimators without A-centering or pressure; they are superseded
+   by the SMAPO variants and were removed. `agents/ppo.py` is now the discounted
+   baseline and the rollout buffer, nothing else. Their test coverage was
+   retargeted onto the SMAPO variants rather than deleted.
+2. **Harmonic survives as `HarmonicSMAPO`.** The tabular harmonic estimators are
+   untouched; only the deep wrapper changed.
+3. **Both additions can be switched off** — `a_centering=True` and
+   `calibrated_pressure=True` are the defaults, and either can be set `False` to
+   measure what it contributes. With both off this is average-reward PPO with a
+   fixed entropy coefficient.
+
+   `entropy_pressure=0` is **not** the way to disable the bonus and is rejected
+   with an error. It would leave the mechanism running and overwrite
+   `entropy_loss_coeff` with 0 on every iteration, silently discarding a fixed
+   coefficient the caller had set.
+4. **The default `entropy_pressure = 0.02` is a placeholder.** The value is
    environment-specific and was searched per environment; the Swimmer champion
-   used 0.005. There is no universal setting and the paper makes no such claim.
+   used 0.005. There is no universal setting and the paper claims none.

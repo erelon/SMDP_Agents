@@ -25,6 +25,7 @@ estimators, so the algorithm and the estimator vary independently::
     APO                   tau is ignored (tau == 1); rho = EWMA(reward)
     RsmartSMAPO           rho = EWMA(reward) / EWMA(tau)
     SmartSMAPO            rho = sum(reward) / sum(tau)
+    HarmonicSMAPO         rho from a harmonic mean of the reward/time streams
     SmoothedSmartSMAPO    rho smoothed in ELAPSED TIME, not per transition
 
 The action space is supplied the same way, by a policy head, so each variant has
@@ -50,6 +51,7 @@ import math
 
 import torch
 
+from .harmonic_r import Harmonic
 from .policy_heads import CategoricalHead
 from .ppo import PPO
 from .relaxed_smart import RelaxedSMART
@@ -64,12 +66,22 @@ class SMAPO(PPO):
 
     longrun = True
 
-    def __init__(self, obs_dim, act_dim, entropy_pressure=0.02,
+    def __init__(self, obs_dim, act_dim, a_centering=True,
+                 calibrated_pressure=True, entropy_pressure=0.02,
                  entropy_warmup_iters=20, pressure_track=True,
                  pressure_track_steps=2_000_000, pressure_boost=True,
                  boost_efold_steps=400_000, boost_frac=0.30, boost_max=8.0,
                  **kwargs):
         """
+        a_centering, calibrated_pressure
+            The two changes SMAPO makes beyond undiscounted PPO, both on by
+            default. Turn one off to measure what it contributes; with both off
+            this is average-reward PPO with a fixed entropy coefficient.
+
+            Note that ``entropy_pressure=0`` is NOT how to disable the bonus: the
+            mechanism would still run and overwrite ``entropy_loss_coeff`` with 0
+            every iteration, silently discarding a fixed coefficient you had set.
+            Use ``calibrated_pressure=False``, which leaves the coefficient alone.
         entropy_pressure
             The target ratio ``p = c_H / std(A)``. This is the hyperparameter to
             search; it is environment-specific and we make no claim of a
@@ -93,8 +105,15 @@ class SMAPO(PPO):
             environments. The boost is suppressed while policy entropy is already
             rising, floored at 1 (it only ever adds) and capped at ``boost_max``.
         """
+        if calibrated_pressure and float(entropy_pressure) <= 0.0:
+            raise ValueError(
+                "entropy_pressure must be > 0 when calibrated_pressure is on; "
+                "pass calibrated_pressure=False to use a fixed "
+                "entropy_loss_coeff instead.")
         kwargs.setdefault("entropy_loss_coeff", 0.0)
         super().__init__(obs_dim, act_dim, **kwargs)
+        self.a_centering = bool(a_centering)
+        self.calibrated_pressure = bool(calibrated_pressure)
         self.entropy_pressure = float(entropy_pressure)
         self.entropy_warmup_iters = int(entropy_warmup_iters)
         self.pressure_track = bool(pressure_track)
@@ -137,7 +156,10 @@ class SMAPO(PPO):
         if a.numel() < 2:
             return adv
         self.adv_std = float(a.std().item())
-        self._update_entropy_coeff(batch)
+        if self.calibrated_pressure:
+            self._update_entropy_coeff(batch)
+        if not self.a_centering:
+            return super().shape_advantage(adv, valid, batch)
         return adv - a.mean()
 
     # --- calibrated entropy pressure ---------------------------------------
@@ -255,6 +277,16 @@ class SmartSMAPO(SMAPO, SMART):
     rho_reduce = "sum"
 
 
+class HarmonicSMAPO(SMAPO, Harmonic):
+    """``rho`` from a harmonic mean over the positive and negative reward streams.
+
+    ``rho_reduce="none"`` because the sign-stratified split needs each reward
+    individually; aggregating the batch would lose it.
+    """
+
+    rho_reduce = "none"
+
+
 class SmoothedSmartSMAPO(SMAPO, SmoothedSMART):
     """``rho`` smoothed in ELAPSED TIME: it forgets per unit of simulated time
     rather than per transition, so its memory does not change when the dwell does.
@@ -277,6 +309,10 @@ class DiscreteRsmartSMAPO(CategoricalHead, RsmartSMAPO):
 
 
 class DiscreteSmartSMAPO(CategoricalHead, SmartSMAPO):
+    pass
+
+
+class DiscreteHarmonicSMAPO(CategoricalHead, HarmonicSMAPO):
     pass
 
 
