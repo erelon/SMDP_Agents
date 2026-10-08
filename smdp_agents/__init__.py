@@ -1,3 +1,4 @@
+from . import checkpoint
 from .base import Agent, MAX_REWARDS
 from .oracle import Oracle
 from .random_agent import RandomAgent
@@ -24,7 +25,7 @@ from .mab_epsilon import EpsilonGreedyMAB, ContinuousEpsilonGreedyMAB
 from .mab_ucb import UCB, ContinuosUCB
 
 __all__ = [
-    'Agent', 'MAX_REWARDS',
+    'Agent', 'MAX_REWARDS', 'checkpoint',
     'Oracle',
     'RandomAgent',
     'QLearning', 'ContinuousQLearning',

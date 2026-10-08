@@ -105,6 +105,10 @@ class PPO(Agent):
         # actor over ``act_dim`` options. The rho / GAE / update machinery below is
         # distribution-agnostic — only the actor head and (logp, entropy, sampling) differ.
         self.discrete = discrete
+        # Recorded so a checkpoint can rebuild the network without being told
+        # its shape again (see smdp_agents.checkpoint).
+        self.obs_dim, self.act_dim = int(obs_dim), int(act_dim)
+        self.hidden, self.init_log_std = tuple(hidden), float(init_log_std)
         if discrete:
             self.net = CategoricalMLP(obs_dim, act_dim, hidden).to(device)
         else:
