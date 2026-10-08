@@ -132,6 +132,59 @@ class WeightedHarmonicPPO(PPO, WeightedHarmonic):
 
 A variant that changes the *correction* rather than the rate overrides `rate_residual`, which is where `r - \rho\tau` enters the GAE recursion. That hook matters: PPO never calls the tabular `set_target`, so overriding that instead would compile, run, and silently do nothing.
 
+### 6b. SMAPO — average-reward policy optimisation for SMDPs
+
+`SMAPO` optimises the long-run reward **rate**. It is PPO's clipped surrogate
+with three changes and nothing else:
+
+1. **No discounting** (`gamma = 1`); the TD residual carries `r - rho*tau`.
+2. **A-centering** — the batch advantage is centred on its own mean. Any
+   estimate of `rho` has tracking error, and that error enters every advantage
+   in the batch as a *shared* offset: zero-mean noise averages out over an epoch
+   of minibatches, a shared offset accumulates. Subtracting the batch mean
+   removes it without changing the ranking of actions.
+3. **Calibrated entropy pressure** — the entropy bonus is specified as the ratio
+   `p = c_H / std(A)` rather than as an absolute coefficient, and is re-derived
+   as the advantage scale moves. A fixed coefficient is a fixed force against a
+   moving one, so it means something different on every task and at every point
+   of a run.
+
+The rate estimator and the action space are both supplied by inheritance, so
+they vary independently:
+
+```python
+from agents import RsmartSMAPO, RolloutBuffer
+
+agent = RsmartSMAPO(obs_dim, act_dim)          # Gaussian policy
+buf = RolloutBuffer()
+for _ in range(batch_T):
+    action, value, logp = agent.act(obs)
+    nxt, reward, terminated, truncated, info = env.step(action)
+    buf.add(obs, action, reward, terminated, truncated, value, logp,
+            time=info["tau"])                  # <- the holding time
+    obs = nxt
+stats = agent.update(buf, bootstrap_value=agent.value(obs))
+```
+
+| variant | `rho` |
+|---|---|
+| `APO` | `EWMA(reward)`; duration ignored (`tau == 1`) |
+| `RsmartSMAPO` | `EWMA(reward) / EWMA(tau)` |
+| `SmartSMAPO` | `sum(reward) / sum(tau)` — never forgets |
+| `SmoothedSmartSMAPO` | smoothed in *elapsed time*, not per transition |
+
+Each has a discrete-action counterpart (`DiscreteRsmartSMAPO`, …) that differs
+only by mixing in `CategoricalHead`; evaluation there is the argmax.
+
+**`time` is load-bearing.** It is the per-decision holding time — `1.0` for an
+MDP, the macro-step duration for an SMDP. It defaults to `1.0`, so omitting it
+silently reduces every rate estimator to its MDP special case.
+
+`entropy_pressure` is the hyperparameter to search. It is environment-specific;
+there is no universal value, and the default here is a placeholder.
+
+See `SMAPO_EXTRACTION.md` for what this implementation deliberately leaves out.
+
 ### 7. Policy change tracking
 
 Agents track whether the last `learn()` call changed the greedy policy for the updated state:

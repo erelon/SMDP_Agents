@@ -12,6 +12,10 @@ from .experemental_harmonic_r import (ExperimentalCumulativeWeightedHarmonic,
 from .deep_q_wrapper import DeepQWrapper
 from .ppo import (PPO, RsmartPPO, SmartPPO, HarmonicPPO, SmoothedSmartPPO,
                   ExperimentalWeightedHarmonicPPO, RolloutBuffer)
+from .policy_heads import CategoricalHead, CategoricalMLP, GaussianHead
+from .smapo import (APO, SMAPO, DiscreteAPO, DiscreteRsmartSMAPO,
+                    DiscreteSmartSMAPO, DiscreteSmoothedSmartSMAPO,
+                    RsmartSMAPO, SmartSMAPO, SmoothedSmartSMAPO)
 from .mab_epsilon import EpsilonGreedyMAB, ContinuousEpsilonGreedyMAB
 from .mab_ucb import UCB, ContinuosUCB
 
@@ -27,6 +31,10 @@ __all__ = [
     'ExperimentalWeightedHarmonic', 'ExperimentalCumulativeWeightedHarmonic',
     'EpsilonGreedyMAB', 'ContinuousEpsilonGreedyMAB', 'UCB', 'ContinuosUCB',
     'DeepQWrapper',
+    'SMAPO', 'APO', 'RsmartSMAPO', 'SmartSMAPO', 'SmoothedSmartSMAPO',
+    'DiscreteAPO', 'DiscreteRsmartSMAPO', 'DiscreteSmartSMAPO',
+    'DiscreteSmoothedSmartSMAPO',
+    'GaussianHead', 'CategoricalHead', 'CategoricalMLP',
     'PPO', 'RsmartPPO', 'SmartPPO', 'HarmonicPPO', 'SmoothedSmartPPO',
     'ExperimentalWeightedHarmonicPPO', 'RolloutBuffer',
 ]

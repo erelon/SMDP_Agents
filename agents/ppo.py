@@ -43,7 +43,8 @@ import torch
 from torch import optim
 
 from .base import Agent
-from .gaussian_mlp import GaussianMLP, gaussian_entropy, gaussian_logp
+from .policy_heads import GaussianHead
+
 from .experemental_harmonic_r import (ExperimentalWeightedHarmonic,
                                       abs_rho_scaled_advantage)
 from .harmonic_r import Harmonic
@@ -90,7 +91,7 @@ class RolloutBuffer:
         return out
 
 
-class PPO(Agent):
+class PPO(GaussianHead, Agent):
     """Discounted PPO + the deep-RL machinery. Base for the average-reward
     variants, which add the ``rho`` correction by also inheriting a tabular
     rho agent (see module docstring)."""
@@ -113,7 +114,8 @@ class PPO(Agent):
         if seed is not None:
             torch.manual_seed(seed)
         self.device = device
-        self.net = GaussianMLP(obs_dim, act_dim, hidden, init_log_std).to(device)
+        self.obs_dim, self.act_dim = obs_dim, act_dim
+        self.net = self.build_net(obs_dim, act_dim, hidden, init_log_std).to(device)
         self.optimizer = optim.Adam(self.net.parameters(), lr=learning_rate, foreach=True)
         # Average-reward variants default to no discounting; plain PPO to 0.99.
         self.discount = (1.0 if self.longrun else 0.99) if discount is None else discount
@@ -137,18 +139,19 @@ class PPO(Agent):
     @torch.no_grad()
     def act(self, obs):
         """Sample an action. Returns (action, value, logp) as cpu tensors."""
-        mu, log_std, value = self.net(_t(obs, self.device))
-        action = mu + log_std.exp() * torch.randn_like(mu)
-        return action.cpu(), value.cpu(), gaussian_logp(action, mu, log_std).cpu()
+        params, value = self.forward_net(_t(obs, self.device))
+        action, logp = self.sample(params)
+        return self.store_action(action).cpu(), value.cpu(), logp.cpu()
 
     @torch.no_grad()
     def eval_act(self, obs):
-        """Deterministic (mean) action for evaluation."""
-        return self.net(_t(obs, self.device))[0].cpu()
+        """Deterministic action for evaluation (mean, or argmax when discrete)."""
+        params, _ = self.forward_net(_t(obs, self.device))
+        return self.store_action(self.mode(params)).cpu()
 
     @torch.no_grad()
     def value(self, obs):
-        return self.net(_t(obs, self.device))[2].cpu()
+        return self.forward_net(_t(obs, self.device))[1].cpu()
 
     # --- average-reward rate (delegated to the inherited tabular calc_new_rho)
     #
@@ -176,6 +179,18 @@ class PPO(Agent):
             self.calc_new_rho(r.sum().item(), t.sum().item(), None, None)
         else:  # "mean"
             self.calc_new_rho(r.mean().item(), t.mean().item(), None, None)
+
+    def shape_advantage(self, adv, valid, batch):
+        """Transform the advantage after GAE and before the optimisation epochs.
+
+        The extension point variants use to add advantage conditioning; plain PPO
+        only offers the optional z-score. ``batch`` is the stacked rollout, so an
+        override may also read the observations or the dwell.
+        """
+        if self.normalize_advantage:
+            m = valid > 0
+            adv = (adv - adv[m].mean()) / (adv[m].std() + 1e-6)
+        return adv
 
     def rate_residual(self, reward, time):
         """The average-reward correction inside the TD residual: ``r - rho*tau``.
@@ -210,25 +225,24 @@ class PPO(Agent):
         ret = ret - self.rm_vbias_coeff * (self.value_bias or 0.0)
 
         valid = (1.0 - b["trunc"]) if self.bootstrap_timelimit else torch.ones_like(reward)
-        if self.normalize_advantage:
-            m = valid > 0
-            adv = (adv - adv[m].mean()) / (adv[m].std() + 1e-6)
+        adv = self.shape_advantage(adv, valid, b)
 
         obs = b["obs"].reshape(-1, b["obs"].shape[-1])
-        act = b["act"].reshape(-1, b["act"].shape[-1])
+        act = b["act"].reshape(-1, *self.action_shape(self.act_dim))
         old_logp, adv, ret, valid = (x.reshape(-1) for x in (b["logp"], adv, ret, valid))
         n = obs.shape[0]
         mb = max(1, n // self.minibatches)
         stats = {"loss": [], "grad_norm": [], "entropy": []}
         for _ in range(self.epochs):
             for idx in torch.randperm(n, device=self.device).split(mb):
-                mu, log_std, v = self.net(obs[idx])
-                ratio = torch.exp(gaussian_logp(act[idx], mu, log_std) - old_logp[idx])
+                params, v = self.forward_net(obs[idx])
+                ratio = torch.exp(self.logp(params, self.load_action(act[idx]))
+                                  - old_logp[idx])
                 clipped = torch.clamp(ratio, 1 - self.ratio_clip, 1 + self.ratio_clip)
                 w = valid[idx]
                 pi_loss = -_vmean(torch.min(ratio * adv[idx], clipped * adv[idx]), w)
                 v_loss = self.value_loss_coeff * _vmean(0.5 * (v - ret[idx]) ** 2, w)
-                entropy = _vmean(gaussian_entropy(log_std), w)
+                entropy = _vmean(self.entropy(params), w)
                 loss = pi_loss + v_loss - self.entropy_loss_coeff * entropy
 
                 self.optimizer.zero_grad()
