@@ -169,6 +169,9 @@ stats = agent.update(buf, bootstrap_value=agent.value(obs))
 | `SmartSMAPO` | `sum(reward) / sum(tau)` — never forgets |
 | `SmoothedSmartSMAPO` | smoothed in *elapsed time*, not per transition |
 
+The rest of the harmonic family has SMAPO agents too — weighted, cumulative, and
+the two whose residual is divided by $|\rho|$ — listed in the algorithm table below.
+
 Each has a discrete-action counterpart (`DiscreteRsmartSMAPO`, …) that differs
 only by mixing in `CategoricalHead`; evaluation there is the argmax.
 
@@ -221,6 +224,9 @@ steps   = agent.step_count                  # learn() calls since construction/r
 | `SmartSMAPO` | SMAPO with the SMART cumulative rate | Das et al. 1999 (rate) |
 | `RsmartSMAPO` | SMAPO with the Relaxed SMART smoothed rate | Gosavi 2004 (rate) |
 | `HarmonicSMAPO` | SMAPO with the Harmonic Moving Average rate | Shtossel et al. 2026 (rate) |
+| `WeightedHarmonicSMAPO` | SMAPO with the reward-weighted HMA rate | Shtossel et al. 2026 (rate) |
+| `CumulativeHarmonicSMAPO`, `CumulativeWeightedHarmonicSMAPO` | the same over the whole run, without forgetting | — |
+| `ExperimentalWeightedHarmonicSMAPO`, `ExperimentalCumulativeWeightedHarmonicSMAPO` | weighted HMA rate, residual divided by $\|\rho\|$ | — |
 | `SmoothedSmartSMAPO` | SMAPO with the elapsed-time smoothed rate | — |
 | `Discrete*SMAPO` | the same four over a discrete action space (`CategoricalHead`) | — |
 | `RandomAgent` | Uniformly random baseline | — |

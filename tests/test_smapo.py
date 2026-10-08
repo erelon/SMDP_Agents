@@ -5,9 +5,14 @@ import torch
 
 from agents.policy_heads import CategoricalHead, GaussianHead
 from agents.ppo import RolloutBuffer
-from agents.average_rates import NormalizedExponentialMovingTimeRate
-from agents.smapo import (APO, DiscreteRsmartSMAPO, HarmonicSMAPO, RsmartSMAPO,
-                          SmartSMAPO, SmoothedSmartSMAPO)
+from agents.average_rates import (NormalizedExponentialMovingTimeRate,
+                                  WeightedHarmonicRate)
+from agents.smapo import (APO, CumulativeHarmonicSMAPO, WeightedHarmonicSMAPO,
+                          CumulativeWeightedHarmonicSMAPO,
+                          DiscreteRsmartSMAPO,
+                          ExperimentalCumulativeWeightedHarmonicSMAPO,
+                          ExperimentalWeightedHarmonicSMAPO, HarmonicSMAPO,
+                          RsmartSMAPO, SmartSMAPO, SmoothedSmartSMAPO)
 
 OBS, ACT, T, B = 4, 2, 12, 3
 
@@ -28,6 +33,10 @@ class SMAPOTests(unittest.TestCase):
 
     def test_every_variant_updates(self):
         for cls in (APO, RsmartSMAPO, SmartSMAPO, HarmonicSMAPO,
+                    WeightedHarmonicSMAPO, CumulativeHarmonicSMAPO,
+                    CumulativeWeightedHarmonicSMAPO,
+                    ExperimentalWeightedHarmonicSMAPO,
+                    ExperimentalCumulativeWeightedHarmonicSMAPO,
                     SmoothedSmartSMAPO):
             agent = cls(OBS, ACT, seed=0)
             buf, bv = rollout(agent)
@@ -235,6 +244,57 @@ class ToggleTests(unittest.TestCase):
     def test_zero_pressure_is_rejected_rather_than_silently_disabling(self):
         with self.assertRaises(ValueError):
             RsmartSMAPO(OBS, ACT, entropy_pressure=0.0)
+
+
+class AbsRhoScaledSMAPOTests(unittest.TestCase):
+    """The |rho| scaling has to reach the GAE residual, not set_target."""
+
+    def build(self):
+        return ExperimentalWeightedHarmonicSMAPO(2, 1, hidden=(4,), seed=0,
+                                                 rho_lr=0.3)
+
+    def test_the_residual_is_divided_by_the_magnitude_of_rho(self):
+        agent, plain = self.build(), HarmonicSMAPO(2, 1, hidden=(4,), seed=0)
+        reward, duration = torch.tensor([6.0]), torch.tensor([2.0])
+        for rho in (2.0, -2.0):
+            with self.subTest(rho=rho):
+                agent.rho = plain.rho = rho
+                self.assertAlmostEqual(agent.rate_residual(reward, duration).item(),
+                                       (6.0 - rho * 2.0) / abs(rho))
+                self.assertAlmostEqual(plain.rate_residual(reward, duration).item(),
+                                       6.0 - rho * 2.0)
+
+    def test_a_zero_rho_falls_back_instead_of_dividing(self):
+        agent = self.build()
+        self.assertEqual(agent.rho, 0.0)
+        self.assertAlmostEqual(
+            agent.rate_residual(torch.tensor([6.0]), torch.tensor([2.0])).item(), 6.0)
+
+    def test_the_scaling_reaches_gae_rather_than_being_ignored(self):
+        """SMAPO defines rate_residual and precedes AbsRhoScaledTarget in the MRO,
+        so inheriting the mixin alone would silently apply no scaling. This is the
+        test that catches that."""
+        agent, plain = self.build(), HarmonicSMAPO(2, 1, hidden=(4,), seed=0)
+        args = (torch.tensor([[4.0]]), torch.zeros(1, 1), torch.ones(1, 1),
+                torch.tensor([0.0]), torch.tensor([[2.0]]))
+        for a in (agent, plain):
+            a.discount, a.gae_lambda, a.rho = 1.0, 1.0, 2.0
+        self.assertAlmostEqual(agent._gae(*args)[0].item(), 0.0)    # (4 - 4)/2
+        self.assertAlmostEqual(plain._gae(*args)[0].item(), 0.0)
+        for a in (agent, plain):
+            a.rho = 0.5
+        self.assertAlmostEqual(agent._gae(*args)[0].item(), 6.0)    # (4 - 1)/0.5
+        self.assertAlmostEqual(plain._gae(*args)[0].item(), 3.0)    # 4 - 1
+
+    def test_rho_is_the_reward_weighted_harmonic_estimator(self):
+        agent = self.build()
+        self.assertIsInstance(agent.hma, WeightedHarmonicRate)
+        self.assertEqual(agent.rho_reduce, "none")
+        reference = WeightedHarmonicRate(0.3)
+        for reward, duration in ((4.0, 2.0), (-1.0, 1.0), (3.0, 2.0)):
+            agent.calc_new_rho(reward, duration, None, None)
+            self.assertAlmostEqual(agent.rho,
+                                   reference.update(reward, duration, reward))
 
 
 if __name__ == "__main__":

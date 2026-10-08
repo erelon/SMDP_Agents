@@ -26,6 +26,8 @@ estimators, so the algorithm and the estimator vary independently::
     RsmartSMAPO           rho = EWMA(reward) / EWMA(tau)
     SmartSMAPO            rho = sum(reward) / sum(tau)
     HarmonicSMAPO         rho from a harmonic mean of the reward/time streams
+                          (and the weighted, cumulative and |rho|-scaled
+                           members of that family -- see below)
     SmoothedSmartSMAPO    rho smoothed in ELAPSED TIME, not per transition
 
 The action space is supplied the same way, by a policy head, so each variant has
@@ -51,7 +53,11 @@ import math
 
 import torch
 
-from .harmonic_r import Harmonic
+from .experemental_harmonic_r import (
+    ExperimentalCumulativeWeightedHarmonic, ExperimentalWeightedHarmonic,
+    abs_rho_scaled_advantage)
+from .harmonic_r import (CumulativeHarmonic, CumulativeWeightedHarmonic,
+                         Harmonic, WeightedHarmonic)
 from .policy_heads import CategoricalHead
 from .ppo import PPO
 from .relaxed_smart import RelaxedSMART
@@ -295,6 +301,67 @@ class SmoothedSmartSMAPO(SMAPO, SmoothedSMART):
     per transition; aggregating the batch would only be exact if the rate were
     constant across it, which a rollout does not guarantee.
     """
+
+    rho_reduce = "none"
+
+
+# --- the rest of the harmonic family ----------------------------------------
+# Every one of these is the same algorithm with a different rho; they are listed
+# individually rather than generated so that `from agents import X` works and the
+# docstring can say what each one's rho is. All take `rho_reduce = "none"`: the
+# harmonic estimators stratify by the sign of the reward, so they need each
+# transition rather than a batch aggregate.
+#
+# A discrete-action counterpart of any of these is one class line, as above:
+#     class DiscreteWeightedHarmonicSMAPO(CategoricalHead, WeightedHarmonicSMAPO):
+#         pass
+
+class WeightedHarmonicSMAPO(SMAPO, WeightedHarmonic):
+    """Harmonic mean weighted by the reward itself."""
+
+    rho_reduce = "none"
+
+
+class CumulativeHarmonicSMAPO(SMAPO, CumulativeHarmonic):
+    """Harmonic mean over the whole run, unweighted; it does not forget."""
+
+    rho_reduce = "none"
+
+
+class CumulativeWeightedHarmonicSMAPO(SMAPO, CumulativeWeightedHarmonic):
+    """Harmonic mean over the whole run, weighted by reward.
+
+    On a domain whose rewards are all positive the weight makes this degenerate
+    to ``sum(r) / sum(tau)``, which is exactly :class:`SmartSMAPO`'s rate.
+    """
+
+    rho_reduce = "none"
+
+
+class _AbsRhoScaledSMAPO(SMAPO):
+    """Shared override for the ``|rho|``-scaled variants.
+
+    The scaling MUST be spelled out here rather than inherited from
+    ``AbsRhoScaledTarget``. That mixin provides ``set_target``, which is the
+    tabular entry point; the deep agents never call it, and ``SMAPO`` precedes
+    the mixin in the MRO, so inheriting it alone would compile, run, and
+    silently apply no scaling at all.
+    """
+
+    def rate_residual(self, reward, time):
+        return abs_rho_scaled_advantage(reward, self.dwell(time), self.rho)
+
+
+class ExperimentalWeightedHarmonicSMAPO(_AbsRhoScaledSMAPO,
+                                        ExperimentalWeightedHarmonic):
+    """Weighted harmonic rho, with the residual divided by ``|rho|``."""
+
+    rho_reduce = "none"
+
+
+class ExperimentalCumulativeWeightedHarmonicSMAPO(
+        _AbsRhoScaledSMAPO, ExperimentalCumulativeWeightedHarmonic):
+    """Cumulative weighted harmonic rho, with the residual divided by ``|rho|``."""
 
     rho_reduce = "none"
 
