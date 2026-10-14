@@ -13,11 +13,11 @@ decision.
 Each step returns the holding time in ``info["tau"]``; feed it to the agent::
 
     from examples.envs.mujoco_smdp import make_swimmer
-    from smdp_agents import RsmartSMAPO, RolloutBuffer
+    from smdp_agents import RsmartDeepSMART, RolloutBuffer
 
     env = make_swimmer()
     obs, _ = env.reset(seed=0)
-    agent, buf = RsmartSMAPO(env.observation_space.shape[0],
+    agent, buf = RsmartDeepSMART(env.observation_space.shape[0],
                              env.action_space.shape[0]), RolloutBuffer()
     action, value, logp = agent.act(torch.as_tensor(obs).float()[None])
     obs, reward, terminated, truncated, info = env.step(action[0].numpy())

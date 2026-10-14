@@ -1,6 +1,6 @@
-"""SMAPO — average-reward policy optimisation for semi-Markov decision processes.
+"""DeepSMART — average-reward policy optimisation for semi-Markov decision processes.
 
-SMAPO optimises the long-run reward RATE rather than a discounted return. It is
+DeepSMART optimises the long-run reward RATE rather than a discounted return. It is
 PPO's clipped surrogate with three changes, and nothing else:
 
 1. **No discounting.** ``gamma = 1``. The TD residual carries the average-reward
@@ -19,16 +19,16 @@ PPO's clipped surrogate with three changes, and nothing else:
    RATIO to the advantage scale rather than as an absolute coefficient (see
    ``_update_entropy_coeff``).
 
-``rho`` is not SMAPO's business: it is supplied by inheriting one of the rate
+``rho`` is not DeepSMART's business: it is supplied by inheriting one of the rate
 estimators, so the algorithm and the estimator vary independently::
 
-    APO                   tau is ignored (tau == 1); rho = EWMA(reward)
-    RsmartSMAPO           rho = EWMA(reward) / EWMA(tau)
-    SmartSMAPO            rho = sum(reward) / sum(tau)
-    HarmonicSMAPO         rho from a harmonic mean of the reward/time streams
-                          (and the weighted, cumulative and |rho|-scaled
-                           members of that family -- see below)
-    SmoothedSmartSMAPO    rho smoothed in ELAPSED TIME, not per transition
+    APO                       tau is ignored (tau == 1); rho = EWMA(reward)
+    RsmartDeepSMART           rho = EWMA(reward) / EWMA(tau)
+    SmartDeepSMART            rho = sum(reward) / sum(tau)
+    HarmonicDeepSMART         rho from a harmonic mean of the reward/time streams
+                              (and the weighted, cumulative and |rho|-scaled
+                               members of that family -- see below)
+    SmoothedSmartDeepSMART    rho smoothed in ELAPSED TIME, not per transition
 
 The action space is a constructor flag inherited from :class:`~smdp_agents.ppo.PPO`:
 ``discrete=True`` swaps the Gaussian actor for a categorical one. Every variant
@@ -36,7 +36,7 @@ below has a ``Discrete*`` convenience class that sets it.
 
 You provide the environment loop; the agents are env-agnostic (torch + numpy)::
 
-    agent = RsmartSMAPO(obs_dim, act_dim)
+    agent = RsmartDeepSMART(obs_dim, act_dim)
     buf = RolloutBuffer()
     ...
     buf.add(o, a, r, terminated, truncated, v, logp, time=tau)
@@ -61,7 +61,7 @@ from .relaxed_smart import RelaxedSMART
 from .smart_r import SMART, SmoothedSMART
 
 
-class SMAPO(PPO):
+class DeepSMART(PPO):
     """Average-reward PPO with A-centering and calibrated entropy pressure.
 
     Subclass it together with a rate estimator; see the module docstring.
@@ -77,7 +77,7 @@ class SMAPO(PPO):
                  **kwargs):
         """
         a_centering, calibrated_pressure
-            The two changes SMAPO makes beyond undiscounted PPO, both on by
+            The two changes DeepSMART makes beyond undiscounted PPO, both on by
             default. Turn one off to measure what it contributes; with both off
             this is average-reward PPO with a fixed entropy coefficient.
 
@@ -252,7 +252,7 @@ class SMAPO(PPO):
 
 
 # --------------------------------------------------------------- variants ---
-class APO(SMAPO, RelaxedSMART):
+class APO(DeepSMART, RelaxedSMART):
     """Average-reward PPO that ignores duration: every decision counts as one.
 
     The MDP reading of average reward. On an SMDP it optimises reward per
@@ -266,19 +266,19 @@ class APO(SMAPO, RelaxedSMART):
         return torch.ones_like(time)
 
 
-class RsmartSMAPO(SMAPO, RelaxedSMART):
+class RsmartDeepSMART(DeepSMART, RelaxedSMART):
     """``rho = EWMA(reward) / EWMA(tau)`` — a ratio of two smoothed quantities."""
 
     rho_reduce = "mean"
 
 
-class SmartSMAPO(SMAPO, SMART):
+class SmartDeepSMART(DeepSMART, SMART):
     """``rho = sum(reward) / sum(tau)`` over the whole run; it cannot forget."""
 
     rho_reduce = "sum"
 
 
-class HarmonicSMAPO(SMAPO, Harmonic):
+class HarmonicDeepSMART(DeepSMART, Harmonic):
     """``rho`` from a harmonic mean over the positive and negative reward streams.
 
     ``rho_reduce="none"`` because the sign-stratified split needs each reward
@@ -288,7 +288,7 @@ class HarmonicSMAPO(SMAPO, Harmonic):
     rho_reduce = "none"
 
 
-class SmoothedSmartSMAPO(SMAPO, SmoothedSMART):
+class SmoothedSmartDeepSMART(DeepSMART, SmoothedSMART):
     """``rho`` smoothed in ELAPSED TIME: it forgets per unit of simulated time
     rather than per transition, so its memory does not change when the dwell does.
 
@@ -308,36 +308,36 @@ class SmoothedSmartSMAPO(SMAPO, SmoothedSMART):
 # transition rather than a batch aggregate.
 #
 # A discrete-action counterpart of any of these is one class line, as above:
-#     WeightedHarmonicSMAPO(obs_dim, n_options, discrete=True)
+#     WeightedHarmonicDeepSMART(obs_dim, n_options, discrete=True)
 
-class WeightedHarmonicSMAPO(SMAPO, WeightedHarmonic):
+class WeightedHarmonicDeepSMART(DeepSMART, WeightedHarmonic):
     """Harmonic mean weighted by the reward itself."""
 
     rho_reduce = "none"
 
 
-class CumulativeHarmonicSMAPO(SMAPO, CumulativeHarmonic):
+class CumulativeHarmonicDeepSMART(DeepSMART, CumulativeHarmonic):
     """Harmonic mean over the whole run, unweighted; it does not forget."""
 
     rho_reduce = "none"
 
 
-class CumulativeWeightedHarmonicSMAPO(SMAPO, CumulativeWeightedHarmonic):
+class CumulativeWeightedHarmonicDeepSMART(DeepSMART, CumulativeWeightedHarmonic):
     """Harmonic mean over the whole run, weighted by reward.
 
     On a domain whose rewards are all positive the weight makes this degenerate
-    to ``sum(r) / sum(tau)``, which is exactly :class:`SmartSMAPO`'s rate.
+    to ``sum(r) / sum(tau)``, which is exactly :class:`SmartDeepSMART`'s rate.
     """
 
     rho_reduce = "none"
 
 
-class _AbsRhoScaledSMAPO(SMAPO):
+class _AbsRhoScaledDeepSMART(DeepSMART):
     """Shared override for the ``|rho|``-scaled variants.
 
     The scaling MUST be spelled out here rather than inherited from
     ``AbsRhoScaledTarget``. That mixin provides ``set_target``, which is the
-    tabular entry point; the deep agents never call it, and ``SMAPO`` precedes
+    tabular entry point; the deep agents never call it, and ``DeepSMART`` precedes
     the mixin in the MRO, so inheriting it alone would compile, run, and
     silently apply no scaling at all.
     """
@@ -346,15 +346,15 @@ class _AbsRhoScaledSMAPO(SMAPO):
         return abs_rho_scaled_advantage(reward, self.dwell(time), self.rho)
 
 
-class ExperimentalWeightedHarmonicSMAPO(_AbsRhoScaledSMAPO,
-                                        ExperimentalWeightedHarmonic):
+class ExperimentalWeightedHarmonicDeepSMART(_AbsRhoScaledDeepSMART,
+                                            ExperimentalWeightedHarmonic):
     """Weighted harmonic rho, with the residual divided by ``|rho|``."""
 
     rho_reduce = "none"
 
 
-class ExperimentalCumulativeWeightedHarmonicSMAPO(
-        _AbsRhoScaledSMAPO, ExperimentalCumulativeWeightedHarmonic):
+class ExperimentalCumulativeWeightedHarmonicDeepSMART(
+        _AbsRhoScaledDeepSMART, ExperimentalCumulativeWeightedHarmonic):
     """Cumulative weighted harmonic rho, with the residual divided by ``|rho|``."""
 
     rho_reduce = "none"
@@ -375,17 +375,17 @@ class DiscreteAPO(_Discrete, APO):
     pass
 
 
-class DiscreteRsmartSMAPO(_Discrete, RsmartSMAPO):
+class DiscreteRsmartDeepSMART(_Discrete, RsmartDeepSMART):
     pass
 
 
-class DiscreteSmartSMAPO(_Discrete, SmartSMAPO):
+class DiscreteSmartDeepSMART(_Discrete, SmartDeepSMART):
     pass
 
 
-class DiscreteHarmonicSMAPO(_Discrete, HarmonicSMAPO):
+class DiscreteHarmonicDeepSMART(_Discrete, HarmonicDeepSMART):
     pass
 
 
-class DiscreteSmoothedSmartSMAPO(_Discrete, SmoothedSmartSMAPO):
+class DiscreteSmoothedSmartDeepSMART(_Discrete, SmoothedSmartDeepSMART):
     pass

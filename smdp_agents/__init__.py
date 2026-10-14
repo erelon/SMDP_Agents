@@ -13,14 +13,15 @@ from .experemental_harmonic_r import (ExperimentalCumulativeWeightedHarmonic,
 from .deep_q_wrapper import DeepQWrapper
 from .gaussian_mlp import CategoricalMLP, GaussianMLP
 from .ppo import PPO, RolloutBuffer
-from .smapo import (APO, SMAPO, CumulativeHarmonicSMAPO,
-                    CumulativeWeightedHarmonicSMAPO, DiscreteAPO,
-                    DiscreteHarmonicSMAPO, DiscreteRsmartSMAPO,
-                    DiscreteSmartSMAPO, DiscreteSmoothedSmartSMAPO,
-                    ExperimentalCumulativeWeightedHarmonicSMAPO,
-                    ExperimentalWeightedHarmonicSMAPO, HarmonicSMAPO,
-                    RsmartSMAPO, SmartSMAPO, SmoothedSmartSMAPO,
-                    WeightedHarmonicSMAPO)
+from .deep_smart import (APO, DeepSMART, CumulativeHarmonicDeepSMART,
+                         CumulativeWeightedHarmonicDeepSMART, DiscreteAPO,
+                         DiscreteHarmonicDeepSMART, DiscreteRsmartDeepSMART,
+                         DiscreteSmartDeepSMART,
+                         DiscreteSmoothedSmartDeepSMART,
+                         ExperimentalCumulativeWeightedHarmonicDeepSMART,
+                         ExperimentalWeightedHarmonicDeepSMART,
+                         HarmonicDeepSMART, RsmartDeepSMART, SmartDeepSMART,
+                         SmoothedSmartDeepSMART, WeightedHarmonicDeepSMART)
 from .mab_epsilon import EpsilonGreedyMAB, ContinuousEpsilonGreedyMAB
 from .mab_ucb import UCB, ContinuosUCB
 
@@ -36,12 +37,12 @@ __all__ = [
     'ExperimentalWeightedHarmonic', 'ExperimentalCumulativeWeightedHarmonic',
     'EpsilonGreedyMAB', 'ContinuousEpsilonGreedyMAB', 'UCB', 'ContinuosUCB',
     'DeepQWrapper',
-    'SMAPO', 'APO', 'RsmartSMAPO', 'SmartSMAPO', 'HarmonicSMAPO',
-    'SmoothedSmartSMAPO', 'WeightedHarmonicSMAPO', 'CumulativeHarmonicSMAPO',
-    'CumulativeWeightedHarmonicSMAPO', 'ExperimentalWeightedHarmonicSMAPO',
-    'ExperimentalCumulativeWeightedHarmonicSMAPO',
-    'DiscreteAPO', 'DiscreteRsmartSMAPO', 'DiscreteSmartSMAPO',
-    'DiscreteHarmonicSMAPO', 'DiscreteSmoothedSmartSMAPO',
+    'DeepSMART', 'APO', 'RsmartDeepSMART', 'SmartDeepSMART', 'HarmonicDeepSMART',
+    'SmoothedSmartDeepSMART', 'WeightedHarmonicDeepSMART', 'CumulativeHarmonicDeepSMART',
+    'CumulativeWeightedHarmonicDeepSMART', 'ExperimentalWeightedHarmonicDeepSMART',
+    'ExperimentalCumulativeWeightedHarmonicDeepSMART',
+    'DiscreteAPO', 'DiscreteRsmartDeepSMART', 'DiscreteSmartDeepSMART',
+    'DiscreteHarmonicDeepSMART', 'DiscreteSmoothedSmartDeepSMART',
     'GaussianMLP', 'CategoricalMLP',
     'PPO',
     'RolloutBuffer',

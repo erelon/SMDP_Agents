@@ -6,12 +6,12 @@ import torch
 from smdp_agents.ppo import RolloutBuffer
 from smdp_agents.average_rates import (NormalizedExponentialMovingTimeRate,
                                   WeightedHarmonicRate)
-from smdp_agents.smapo import (APO, CumulativeHarmonicSMAPO, WeightedHarmonicSMAPO,
-                          CumulativeWeightedHarmonicSMAPO,
-                          DiscreteRsmartSMAPO,
-                          ExperimentalCumulativeWeightedHarmonicSMAPO,
-                          ExperimentalWeightedHarmonicSMAPO, HarmonicSMAPO,
-                          RsmartSMAPO, SmartSMAPO, SmoothedSmartSMAPO)
+from smdp_agents.deep_smart import (
+    APO, CumulativeHarmonicDeepSMART, WeightedHarmonicDeepSMART,
+    CumulativeWeightedHarmonicDeepSMART, DiscreteRsmartDeepSMART,
+    ExperimentalCumulativeWeightedHarmonicDeepSMART,
+    ExperimentalWeightedHarmonicDeepSMART, HarmonicDeepSMART,
+    RsmartDeepSMART, SmartDeepSMART, SmoothedSmartDeepSMART)
 
 OBS, ACT, T, B = 4, 2, 12, 3
 
@@ -28,15 +28,15 @@ def rollout(agent, obs_dim=OBS, n=T, b=B, tau=2.0, seed=0):
     return buf, torch.zeros(b)
 
 
-class SMAPOTests(unittest.TestCase):
+class DeepSMARTTests(unittest.TestCase):
 
     def test_every_variant_updates(self):
-        for cls in (APO, RsmartSMAPO, SmartSMAPO, HarmonicSMAPO,
-                    WeightedHarmonicSMAPO, CumulativeHarmonicSMAPO,
-                    CumulativeWeightedHarmonicSMAPO,
-                    ExperimentalWeightedHarmonicSMAPO,
-                    ExperimentalCumulativeWeightedHarmonicSMAPO,
-                    SmoothedSmartSMAPO):
+        for cls in (APO, RsmartDeepSMART, SmartDeepSMART, HarmonicDeepSMART,
+                    WeightedHarmonicDeepSMART, CumulativeHarmonicDeepSMART,
+                    CumulativeWeightedHarmonicDeepSMART,
+                    ExperimentalWeightedHarmonicDeepSMART,
+                    ExperimentalCumulativeWeightedHarmonicDeepSMART,
+                    SmoothedSmartDeepSMART):
             agent = cls(OBS, ACT, seed=0)
             buf, bv = rollout(agent)
             stats = agent.update(buf, bv)
@@ -44,7 +44,7 @@ class SMAPOTests(unittest.TestCase):
             self.assertIn("realised_pressure", stats)
 
     def test_a_centering_removes_the_batch_mean(self):
-        agent = RsmartSMAPO(OBS, ACT, seed=0)
+        agent = RsmartDeepSMART(OBS, ACT, seed=0)
         adv = torch.randn(T, B) + 7.0           # a large shared offset
         valid = torch.ones(T, B)
         batch = {"obs": torch.randn(T, B, OBS), "rew": torch.zeros(T, B),
@@ -55,7 +55,7 @@ class SMAPOTests(unittest.TestCase):
         self.assertTrue(torch.allclose(out - out.mean(), adv - adv.mean(), atol=1e-6))
 
     def test_pressure_is_off_during_warmup_then_calibrated(self):
-        agent = RsmartSMAPO(OBS, ACT, seed=0, entropy_pressure=0.05,
+        agent = RsmartDeepSMART(OBS, ACT, seed=0, entropy_pressure=0.05,
                             entropy_warmup_iters=3, pressure_track=False,
                             pressure_boost=False)
         valid = torch.ones(T, B)
@@ -71,7 +71,7 @@ class SMAPOTests(unittest.TestCase):
                                0.05 * agent._adv_std_frozen, places=9)
 
     def test_tracking_holds_the_ratio_as_the_scale_moves(self):
-        agent = RsmartSMAPO(OBS, ACT, seed=0, entropy_pressure=0.05,
+        agent = RsmartDeepSMART(OBS, ACT, seed=0, entropy_pressure=0.05,
                             entropy_warmup_iters=1, pressure_track=True,
                             pressure_track_steps=1.0,   # one iteration = full memory
                             pressure_boost=False)
@@ -86,7 +86,7 @@ class SMAPOTests(unittest.TestCase):
         self.assertGreater(agent.entropy_loss_coeff, 0.05 * frozen)
 
     def test_tracked_coefficient_never_falls_below_the_frozen_floor(self):
-        agent = RsmartSMAPO(OBS, ACT, seed=0, entropy_pressure=0.05,
+        agent = RsmartDeepSMART(OBS, ACT, seed=0, entropy_pressure=0.05,
                             entropy_warmup_iters=1, pressure_track=True,
                             pressure_track_steps=1.0, pressure_boost=False)
         valid = torch.ones(T, B)
@@ -112,12 +112,12 @@ class SMAPOTests(unittest.TestCase):
                  "time": torch.full((T, B), 2.0)}
         base = torch.randn(T, B, generator=torch.Generator().manual_seed(4))
 
-        healthy = RsmartSMAPO(OBS, ACT, seed=0, **kw)
+        healthy = RsmartDeepSMART(OBS, ACT, seed=0, **kw)
         for _ in range(40):
             healthy.shape_advantage(base * 10.0, valid, batch)
         self.assertAlmostEqual(healthy.boost, 1.0, places=9)
 
-        starved = RsmartSMAPO(OBS, ACT, seed=0, **kw)
+        starved = RsmartDeepSMART(OBS, ACT, seed=0, **kw)
         for _ in range(20):                       # establish a healthy peak
             starved.shape_advantage(base * 10.0, valid, batch)
         self.assertAlmostEqual(starved.boost, 1.0, places=9)
@@ -127,7 +127,7 @@ class SMAPOTests(unittest.TestCase):
         self.assertLessEqual(starved.boost, starved.boost_max + 1e-9)
 
     def test_apo_ignores_the_holding_time(self):
-        apo, rsmart = APO(OBS, ACT, seed=0), RsmartSMAPO(OBS, ACT, seed=0)
+        apo, rsmart = APO(OBS, ACT, seed=0), RsmartDeepSMART(OBS, ACT, seed=0)
         r, t = torch.full((T, B), 1.0), torch.full((T, B), 5.0)
         apo.rho = rsmart.rho = 0.3
         self.assertTrue(torch.allclose(apo.rate_residual(r, t), r - 0.3 * 1.0))
@@ -135,7 +135,7 @@ class SMAPOTests(unittest.TestCase):
 
     def test_discrete_variant_runs_and_evaluates_by_argmax(self):
         n_actions = 5
-        agent = DiscreteRsmartSMAPO(OBS, n_actions, seed=0)
+        agent = DiscreteRsmartDeepSMART(OBS, n_actions, seed=0)
         self.assertTrue(agent.discrete)
         buf, bv = rollout(agent)
         stats = agent.update(buf, bv)
@@ -147,7 +147,7 @@ class SMAPOTests(unittest.TestCase):
         self.assertTrue(torch.equal(a.long(), agent.net(obs)[0].argmax(-1)))
 
     def test_continuous_default_is_gaussian(self):
-        self.assertFalse(RsmartSMAPO(OBS, ACT, seed=0).discrete)
+        self.assertFalse(RsmartDeepSMART(OBS, ACT, seed=0).discrete)
 
 
 class RateEstimatorTests(unittest.TestCase):
@@ -158,17 +158,17 @@ class RateEstimatorTests(unittest.TestCase):
         duration = torch.tensor([[1.0, 1.0], [2.0, 2.0]])
         value = torch.tensor([[3.0, 1.0], [2.0, 2.0]])
 
-        smart = SmartSMAPO(1, 1, hidden=(2,), rho_lr=0.5)
+        smart = SmartDeepSMART(1, 1, hidden=(2,), rho_lr=0.5)
         smart.update_rho(reward, value, duration)
         self.assertAlmostEqual(smart.rho, 6.0 / 6.0)      # sum r / sum tau
         self.assertEqual(smart.value_bias, 2.0)
 
-        rsmart = RsmartSMAPO(1, 1, hidden=(2,), rho_lr=0.5)
+        rsmart = RsmartDeepSMART(1, 1, hidden=(2,), rho_lr=0.5)
         rsmart.update_rho(reward, value, duration)
         self.assertAlmostEqual(rsmart.rho,
                                reward.mean().item() / duration.mean().item())
 
-        harmonic = HarmonicSMAPO(1, 1, hidden=(2,), rho_lr=0.5)
+        harmonic = HarmonicDeepSMART(1, 1, hidden=(2,), rho_lr=0.5)
         harmonic.update_rho(reward, value, duration)
         self.assertTrue(math.isfinite(harmonic.rho))
 
@@ -180,11 +180,11 @@ class RateEstimatorTests(unittest.TestCase):
         self.assertAlmostEqual(apo.rho, reward.mean().item())   # tau == 1
 
 
-class SmoothedSmartSMAPOTests(unittest.TestCase):
+class SmoothedSmartDeepSMARTTests(unittest.TestCase):
     """The deep SmoothedSMART reuses the tabular time-decayed estimator."""
 
     def build(self):
-        return SmoothedSmartSMAPO(2, 1, hidden=(4,), seed=0, rho_lr=0.2)
+        return SmoothedSmartDeepSMART(2, 1, hidden=(4,), seed=0, rho_lr=0.2)
 
     def test_it_is_an_average_reward_variant_fed_per_transition(self):
         agent = self.build()
@@ -219,7 +219,7 @@ class SmoothedSmartSMAPOTests(unittest.TestCase):
 
 
 class ToggleTests(unittest.TestCase):
-    """Both changes SMAPO adds can be switched off independently."""
+    """Both changes DeepSMART adds can be switched off independently."""
 
     def setUp(self):
         self.adv = torch.randn(T, B, generator=torch.Generator().manual_seed(9)) + 4.0
@@ -228,12 +228,12 @@ class ToggleTests(unittest.TestCase):
                       "time": torch.full((T, B), 2.0)}
 
     def test_a_centering_off_leaves_the_offset(self):
-        agent = RsmartSMAPO(OBS, ACT, seed=0, a_centering=False)
+        agent = RsmartDeepSMART(OBS, ACT, seed=0, a_centering=False)
         out = agent.shape_advantage(self.adv.clone(), self.valid, self.batch)
         self.assertGreater(abs(float(out.mean())), 1.0)
 
     def test_calibrated_pressure_off_keeps_a_fixed_coefficient(self):
-        agent = RsmartSMAPO(OBS, ACT, seed=0, calibrated_pressure=False,
+        agent = RsmartDeepSMART(OBS, ACT, seed=0, calibrated_pressure=False,
                             entropy_loss_coeff=0.01, entropy_warmup_iters=1)
         for _ in range(3):
             agent.shape_advantage(self.adv.clone(), self.valid, self.batch)
@@ -241,18 +241,18 @@ class ToggleTests(unittest.TestCase):
 
     def test_zero_pressure_is_rejected_rather_than_silently_disabling(self):
         with self.assertRaises(ValueError):
-            RsmartSMAPO(OBS, ACT, entropy_pressure=0.0)
+            RsmartDeepSMART(OBS, ACT, entropy_pressure=0.0)
 
 
-class AbsRhoScaledSMAPOTests(unittest.TestCase):
+class AbsRhoScaledDeepSMARTTests(unittest.TestCase):
     """The |rho| scaling has to reach the GAE residual, not set_target."""
 
     def build(self):
-        return ExperimentalWeightedHarmonicSMAPO(2, 1, hidden=(4,), seed=0,
+        return ExperimentalWeightedHarmonicDeepSMART(2, 1, hidden=(4,), seed=0,
                                                  rho_lr=0.3)
 
     def test_the_residual_is_divided_by_the_magnitude_of_rho(self):
-        agent, plain = self.build(), HarmonicSMAPO(2, 1, hidden=(4,), seed=0)
+        agent, plain = self.build(), HarmonicDeepSMART(2, 1, hidden=(4,), seed=0)
         reward, duration = torch.tensor([6.0]), torch.tensor([2.0])
         for rho in (2.0, -2.0):
             with self.subTest(rho=rho):
@@ -269,10 +269,10 @@ class AbsRhoScaledSMAPOTests(unittest.TestCase):
             agent.rate_residual(torch.tensor([6.0]), torch.tensor([2.0])).item(), 6.0)
 
     def test_the_scaling_reaches_gae_rather_than_being_ignored(self):
-        """SMAPO defines rate_residual and precedes AbsRhoScaledTarget in the MRO,
+        """DeepSMART defines rate_residual and precedes AbsRhoScaledTarget in the MRO,
         so inheriting the mixin alone would silently apply no scaling. This is the
         test that catches that."""
-        agent, plain = self.build(), HarmonicSMAPO(2, 1, hidden=(4,), seed=0)
+        agent, plain = self.build(), HarmonicDeepSMART(2, 1, hidden=(4,), seed=0)
         args = (torch.tensor([[4.0]]), torch.zeros(1, 1), torch.ones(1, 1),
                 torch.tensor([0.0]), torch.tensor([[2.0]]))
         for a in (agent, plain):

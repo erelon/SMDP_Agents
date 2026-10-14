@@ -1,6 +1,6 @@
-# SMAPO extraction — what was kept, what was dropped, what is reproducible
+# DeepSMART extraction — what was kept, what was dropped, what is reproducible
 
-This records the decisions behind `smdp_agents/smapo.py`. The source implementation
+This records the decisions behind `smdp_agents/deep_smart.py`. The source implementation
 accumulated a large number of experimental flags while the algorithm was being
 developed; almost all of them were tested and not adopted. This repo carries the
 **final algorithm only**.
@@ -41,16 +41,16 @@ Two of these are worth flagging because the development notes say otherwise.
 
 | mechanism | where |
 |---|---|
-| undiscounted objective, `r - rho*tau` in the TD residual | `SMAPO.rate_residual` |
-| the rate estimator, by inheritance | `APO` / `RsmartSMAPO` / `SmartSMAPO` / `SmoothedSmartSMAPO` |
-| A-centering | `SMAPO.shape_advantage` |
-| calibrated entropy pressure, with tracking and the starvation boost | `SMAPO._update_entropy_coeff`, `SMAPO._boost_step` |
+| undiscounted objective, `r - rho*tau` in the TD residual | `DeepSMART.rate_residual` |
+| the rate estimator, by inheritance | `APO` / `RsmartDeepSMART` / `SmartDeepSMART` / `SmoothedSmartDeepSMART` |
+| A-centering | `DeepSMART.shape_advantage` |
+| calibrated entropy pressure, with tracking and the starvation boost | `DeepSMART._update_entropy_coeff`, `DeepSMART._boost_step` |
 | debiased rate estimators | already in `smdp_agents/average_rates.py` (`NormalizedEMA`) |
 | value-bias correction `rm_vbias_coeff` | inherited from `PPO`; a searched hyperparameter, kept as a parameter |
 
 Controller rates are specified in **environment steps**, not iterations, because
 the number of iterations per unit of simulated time depends on the dwell regime.
-`SMAPO._batch_steps` does the conversion from the batch's own summed holding time.
+`DeepSMART._batch_steps` does the conversion from the batch's own summed holding time.
 
 ## 3. Dropped, with the reason
 
@@ -66,7 +66,7 @@ final configuration, and none is referenced by the paper.
 | `residual_eta_beta` | closed-loop rate estimator | halved the rate error and changed no outcome |
 | `profiled_centring` | dwell-profiled rather than mean centring | the dwell-correlated component of the offset is not distinguishable from zero |
 | `exact_value_centring` | an exact form of the value-constraint correction | acts on the critic target; the offset that matters lives in the advantage |
-| `normalize_advantage` | z-scoring the advantage | mutually exclusive with A-centering and not the published choice. It remains a `PPO` option because it predates this work; `SMAPO` overrides the hook and does not use it |
+| `normalize_advantage` | z-scoring the advantage | mutually exclusive with A-centering and not the published choice. It remains a `PPO` option because it predates this work; `DeepSMART` overrides the hook and does not use it |
 | `pg_divisor` | the `1/mean(tau)` advantage factor | criterion-invariant; see above |
 
 ## 4. What this repo can and cannot reproduce
@@ -102,13 +102,13 @@ formulation turns on.
 
 ## 5. Resolved while extracting
 
-1. **The pre-SMAPO deep variants are gone.** `RsmartPPO`, `SmartPPO`,
+1. **The pre-DeepSMART deep variants are gone.** `RsmartPPO`, `SmartPPO`,
    `HarmonicPPO`, `SmoothedSmartPPO` and `ExperimentalWeightedHarmonicPPO` were
    the same rate estimators without A-centering or pressure; they are superseded
-   by the SMAPO variants and were removed. `smdp_agents/ppo.py` is now the discounted
+   by the DeepSMART variants and were removed. `smdp_agents/ppo.py` is now the discounted
    baseline and the rollout buffer, nothing else. Their test coverage was
-   retargeted onto the SMAPO variants rather than deleted.
-2. **Harmonic survives as `HarmonicSMAPO`.** The tabular harmonic estimators are
+   retargeted onto the DeepSMART variants rather than deleted.
+2. **Harmonic survives as `HarmonicDeepSMART`.** The tabular harmonic estimators are
    untouched; only the deep wrapper changed.
 3. **The action space uses `master`'s mechanism, not a new one.** An earlier
    draft of this work added a policy-head mixin; `master` had meanwhile shipped

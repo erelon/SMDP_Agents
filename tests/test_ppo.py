@@ -8,8 +8,8 @@ from smdp_agents.average_rates import (NormalizedExponentialMovingTimeRate,
                                        WeightedHarmonicRate)
 from smdp_agents.gaussian_mlp import CategoricalMLP, GaussianMLP
 from smdp_agents.ppo import PPO, RolloutBuffer
-from smdp_agents.smapo import (ExperimentalWeightedHarmonicSMAPO,
-                               RsmartSMAPO)
+from smdp_agents.deep_smart import (ExperimentalWeightedHarmonicDeepSMART,
+                                    RsmartDeepSMART)
 
 
 class PPOTests(unittest.TestCase):
@@ -84,7 +84,7 @@ class SMDPDiscountTests(unittest.TestCase):
     def test_the_average_reward_variants_are_untouched_by_it(self):
         # discount == 1.0 makes gamma^tau == 1 for every tau, so holding time
         # reaches the objective only through rate_residual's -rho*tau.
-        agent = RsmartSMAPO(1, 1, hidden=(2,), gae_lambda=1.0, seed=0)
+        agent = RsmartDeepSMART(1, 1, hidden=(2,), gae_lambda=1.0, seed=0)
         self.assertEqual(agent.discount, 1.0)
         agent.rho = 0.0
         reference = self.gae(agent, tau=1.0)
@@ -94,7 +94,7 @@ class SMDPDiscountTests(unittest.TestCase):
 
     def test_holding_time_still_reaches_rho_when_the_discount_is_inert(self):
         # The other half of the above: with gamma^tau == 1, tau must still bite.
-        agent = RsmartSMAPO(1, 1, hidden=(2,), gae_lambda=1.0, seed=0)
+        agent = RsmartDeepSMART(1, 1, hidden=(2,), gae_lambda=1.0, seed=0)
         agent.rho = 1.0
         one, two = self.gae(agent, tau=1.0, steps=1), self.gae(agent, tau=2.0, steps=1)
         self.assertAlmostEqual(one.item(), 0.0)    # 0 - 1*1 + 1*1
@@ -103,7 +103,7 @@ class SMDPDiscountTests(unittest.TestCase):
     def test_it_composes_with_a_scaled_rate_residual(self):
         # gamma^tau must multiply the bootstrap only — the residual keeps whatever
         # rate_residual returns, including the |rho| scaling.
-        agent = ExperimentalWeightedHarmonicSMAPO(1, 1, hidden=(2,), seed=0)
+        agent = ExperimentalWeightedHarmonicDeepSMART(1, 1, hidden=(2,), seed=0)
         agent.discount, agent.gae_lambda, agent.rho = 0.5, 1.0, 2.0
         advantage, _ = agent._gae(
             torch.tensor([[6.0]]), torch.zeros(1, 1), torch.ones(1, 1),

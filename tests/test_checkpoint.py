@@ -94,8 +94,8 @@ class DeepCheckpointTests(unittest.TestCase):
         return os.path.join(self.dir, n)
 
     def test_every_deep_agent_round_trips(self):
-        for name in ("PPO", "APO", "RsmartSMAPO", "SmartSMAPO", "HarmonicSMAPO",
-                     "SmoothedSmartSMAPO", "DiscreteRsmartSMAPO"):
+        for name in ("PPO", "APO", "RsmartDeepSMART", "SmartDeepSMART", "HarmonicDeepSMART",
+                     "SmoothedSmartDeepSMART", "DiscreteRsmartDeepSMART"):
             with self.subTest(agent=name):
                 cls = getattr(A, name)
                 agent = cls(4, 2, hidden=(8,), seed=0)
@@ -109,7 +109,7 @@ class DeepCheckpointTests(unittest.TestCase):
 
     def test_the_optimiser_state_survives(self):
         """Adam's moments are state; dropping them restarts the optimiser."""
-        agent = A.RsmartSMAPO(4, 2, hidden=(8,), seed=0)
+        agent = A.RsmartDeepSMART(4, 2, hidden=(8,), seed=0)
         agent.update(*rollout(agent))
         back = load(save(agent, self.path()))
         src = agent.optimizer.state_dict()["state"]
@@ -121,8 +121,8 @@ class DeepCheckpointTests(unittest.TestCase):
             self.assertEqual(int(src[k]["step"]), int(dst[k]["step"]))
 
     def test_the_pressure_controller_state_survives(self):
-        """SMAPO's calibration is slow state; losing it silently re-runs warmup."""
-        agent = A.RsmartSMAPO(4, 2, hidden=(8,), seed=0, entropy_warmup_iters=1)
+        """DeepSMART's calibration is slow state; losing it silently re-runs warmup."""
+        agent = A.RsmartDeepSMART(4, 2, hidden=(8,), seed=0, entropy_warmup_iters=1)
         for _ in range(3):
             agent.update(*rollout(agent))
         back = load(save(agent, self.path()))
@@ -132,7 +132,7 @@ class DeepCheckpointTests(unittest.TestCase):
         self.assertIsNotNone(agent._adv_std_frozen)       # warmup had completed
 
     def test_a_resumed_agent_continues_identically(self):
-        a = A.RsmartSMAPO(4, 2, hidden=(8,), seed=0, entropy_warmup_iters=1)
+        a = A.RsmartDeepSMART(4, 2, hidden=(8,), seed=0, entropy_warmup_iters=1)
         a.update(*rollout(a))
         path = save(a, self.path())
         # `a` keeps going first, advancing torch's GLOBAL rng; loading with
@@ -145,7 +145,7 @@ class DeepCheckpointTests(unittest.TestCase):
             self.assertAlmostEqual(sa[k], sb[k], places=5, msg=k)
 
     def test_the_discrete_head_is_rebuilt_as_a_discrete_head(self):
-        agent = A.DiscreteRsmartSMAPO(4, 5, hidden=(8,), seed=0)
+        agent = A.DiscreteRsmartDeepSMART(4, 5, hidden=(8,), seed=0)
         back = load(save(agent, self.path()))
         self.assertTrue(back.discrete)
         self.assertIsInstance(back.net, A.CategoricalMLP)
@@ -153,7 +153,7 @@ class DeepCheckpointTests(unittest.TestCase):
 
     def test_without_restore_torch_rng_the_weights_still_match(self):
         """The agent is restored either way; only the global draw sequence differs."""
-        a = A.RsmartSMAPO(4, 2, hidden=(8,), seed=0)
+        a = A.RsmartDeepSMART(4, 2, hidden=(8,), seed=0)
         a.update(*rollout(a))
         b = load(save(a, self.path()))                 # default: RNG untouched
         obs = torch.randn(5, 4)
@@ -162,7 +162,7 @@ class DeepCheckpointTests(unittest.TestCase):
 
     def test_no_torch_object_is_pickled(self):
         """Weights go out as numpy so a different torch version can read them."""
-        agent = A.RsmartSMAPO(4, 2, hidden=(8,), seed=0)
+        agent = A.RsmartDeepSMART(4, 2, hidden=(8,), seed=0)
         agent.update(*rollout(agent))
         blob = state_of(agent)
         for v in blob["net"].values():

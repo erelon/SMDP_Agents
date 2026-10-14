@@ -6,7 +6,7 @@ hooks have to sit in the update path: ``update_rho`` refreshes the rate each
 batch, ``rate_residual`` is the only place the rate enters the objective, and
 ``shape_advantage`` conditions the advantage before the optimisation epochs.
 With ``longrun = False`` all three are inert and this is textbook PPO. The
-average-reward agents themselves are in :mod:`smdp_agents.smapo`.
+average-reward agents themselves are in :mod:`smdp_agents.deep_smart`.
 
 The holding time ``time`` (``1.0`` for an MDP, the macro-step duration for an
 SMDP) feeds the GAE recursion twice: through ``rate_residual``'s ``- rho*tau``
