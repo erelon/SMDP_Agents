@@ -524,6 +524,55 @@ class DriftEnvTests(unittest.TestCase):
 
 
 # ------------------------------------------------------------- whack-a-mole
+class TunedWhackAMoleTests(unittest.TestCase):
+    """The two cells this repo tuned, as opposed to inherited from the source."""
+
+    NAMES = ("wam_smdp_balanced_cost", "wam_smdp_costly_whack")
+
+    def test_they_are_the_two_cost_regimes(self):
+        # The sweep's finding: on the SMDP variant the agent ordering follows the
+        # cost ratio whack_time / time_per_distance. These are one cell from each
+        # regime, and the ratio is the thing that must not drift.
+        for name, ratio in zip(self.NAMES, (1.0, 8.0)):
+            with self.subTest(env=name):
+                env = make(name)
+                self.assertAlmostEqual(env.whack_time / env.time_per_distance, ratio)
+                self.assertEqual(env.mole_dynamics, "until_whacked")
+                self.assertEqual(env.reward_mode, "whack")
+                self.assertEqual((env.rows, env.cols), (4, 4))
+
+    def test_they_run_on_library_defaults_not_the_sources_tuning(self):
+        # They were tuned with default hyperparameters. Inheriting the whackAmole
+        # protocol would hand every agent that repo's per-agent grid search and
+        # silently invalidate the measured margins.
+        for name in self.NAMES:
+            with self.subTest(env=name):
+                spec = ENVS[name]
+                self.assertEqual(spec.source, "none")
+                self.assertEqual(spec.agent_kwargs, {})
+                self.assertFalse(spec.attributed)
+
+    def test_they_are_time_budgeted_and_compared_on_the_evaluation(self):
+        for name in self.NAMES:
+            with self.subTest(env=name):
+                spec = ENVS[name]
+                self.assertEqual(spec.family, "whack_a_mole")
+                self.assertEqual(spec.budget, 200_000)
+                self.assertIsNone(spec.budget_steps)
+                self.assertEqual(spec.evaluation, 20_000)
+                # lifetime_rate on a 200k run is dominated by exploration cost.
+                self.assertEqual(spec.metric, "eval_rate")
+
+    def test_the_up_down_dynamics_deliberately_get_no_tuned_cell(self):
+        # Its ordering does not survive the budget change -- rank agreement between
+        # a 40k screen and the full 600k is negative -- so no configuration of it is
+        # worth shipping as a tuned example. See _tuned_whack_a_mole's docstring.
+        tuned = [n for n, s in ENVS.items() if "tuned" in s.tags]
+        self.assertEqual(sorted(tuned), sorted(self.NAMES))
+        for name in tuned:
+            self.assertEqual(make(name).mole_dynamics, "until_whacked")
+
+
 class WhackAMoleEnvTests(unittest.TestCase):
     """The MDP/SMDP pair differs in exactly one thing: whether τ varies."""
 

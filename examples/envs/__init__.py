@@ -209,6 +209,84 @@ def _whack_a_mole(kind: str, mole_dynamics: str, reward_mode: str) -> EnvSpec:
                    note=f"3x3 grid, {clock}; {dynamics}; {payout}")
 
 
+#: The two configurations this repo tuned, as the cost *ratio* they represent.
+#: ``whack_time / time_per_distance`` is what actually orders the agents on the
+#: SMDP variant -- see :func:`_tuned_whack_a_mole`.
+TUNED_WHACK_A_MOLE = {
+    "wam_smdp_balanced_cost": dict(
+        rows=4, cols=4, mole_up_prob=0.1 * 2, whack_time=0.25,
+        time_per_distance=0.25),
+    "wam_smdp_costly_whack": dict(
+        rows=4, cols=4, mole_up_prob=0.1, whack_time=4.0, time_per_distance=0.5),
+}
+
+
+def _tuned_whack_a_mole() -> List[EnvSpec]:
+    """Two whack-a-mole cells chosen by a parameter sweep, not by a source.
+
+    The registered ``wam_*`` matrix above inherits whackAmole's own grid and cost
+    settings. Those were never chosen to *discriminate between agents*, and they do
+    not: at the source's defaults the SMDP cells tie or separate by margins inside
+    the seed noise, and the shipped 3x3 configuration ranks 57th of 68 on how well
+    its agent ordering represents the parameter space.
+
+    These two were picked by sweeping 264 configurations x 10 agents x 6 seeds and
+    keeping the cells that are both *discriminative* (the agents genuinely separate)
+    and *representative* (their ranking agrees with the rest of the space), then
+    re-confirming at the registered budget on two independent seed blocks.
+
+    What the sweep found is that on the SMDP variant the agent ordering is governed
+    by the **cost ratio** ``whack_time / time_per_distance`` -- striking versus
+    moving -- more than by either cost alone (rank agreement +0.475 within a ratio
+    against +0.400 and +0.357 within the raw knobs). Two regimes fall out, and these
+    are one cell from each:
+
+    ``wam_smdp_balanced_cost`` (ratio 1)
+        Striking costs what moving does. The harmonic family wins:
+        ``CumulativeHarmonic`` 0.9738 +/- 0.0082 over ``Harmonic`` by
+        0.0908 +/- 0.0134, with the whole harmonic family taking the top three.
+    ``wam_smdp_costly_whack`` (ratio 8)
+        Striking is expensive, so the policy question is when to commit.
+        ``ContinuousRLearning`` 0.2091 +/- 0.0018 over ``SMART`` by
+        0.0170 +/- 0.0056.
+
+    Both replicate on 30 held-out seeds at the registered 200,000-time-unit budget,
+    with gaps several times their confidence intervals. Note the *source's* default
+    (``time_per_distance=1, whack_time=1``) sits at ratio 1, the harmonic regime --
+    worth knowing before reading anything into the harmonic family's standing on the
+    inherited matrix.
+
+    They take ``source="none"``: the budget is this repo's and every agent runs on
+    **library defaults**, which is what they were tuned under. Routing them through
+    the ``whack_a_mole`` protocol would hand them that repo's per-agent tuning and
+    silently invalidate the numbers above.
+
+    The ``up_down`` dynamics get no tuned cell. Swept over the same space its agent
+    ordering does not survive the budget change at all -- rank agreement between a
+    40,000-unit screen and the full 600,000 is **-0.34**, i.e. the leaderboard
+    inverts rather than settles -- and 34 of 144 cells are degenerate. There is no
+    configuration of it whose ordering means anything.
+    """
+    specs = []
+    for name, params in TUNED_WHACK_A_MOLE.items():
+        def build(_p=params, *, max_steps: Optional[int] = None,
+                  max_time: Optional[float] = None,
+                  render_mode: Optional[str] = None, **kwargs: Any) -> SMDPEnv:
+            return WhackAMoleSMDP(mole_dynamics="until_whacked", reward_mode="whack",
+                                  max_steps=max_steps, max_time=max_time,
+                                  render_mode=render_mode, **{**_p, **kwargs})
+        ratio = params["whack_time"] / params["time_per_distance"]
+        specs.append(EnvSpec(
+            name=name, family="whack_a_mole", build=build, budget=200_000,
+            source="none", evaluation=20_000, metric="eval_rate", attributed=False,
+            tags=("smdp", "until_whacked", "whack", "tuned"),
+            note=(f"{params['rows']}x{params['cols']} SMDP, moles stay up until "
+                  f"whacked, +1 per whack; whack_time={params['whack_time']:g} "
+                  f"against time_per_distance={params['time_per_distance']:g} "
+                  f"(cost ratio {ratio:g}) — tuned here to separate the agents")))
+    return specs
+
+
 def _parse_whack_a_mole(name: str):
     """``wam_smdp_up_down_whack_downed`` -> ``("smdp", "up_down", "whack_downed")``."""
     tag = name[len("wam_"):]
@@ -347,6 +425,7 @@ def _build_registry() -> Dict[str, EnvSpec]:
                 note="long or short on hourly BTC bars; the holding time is "
                      "derived from the same return that pays the reward"),
     ]
+    entries += _tuned_whack_a_mole()
     for name in source_settings.WHACK_A_MOLE_BUDGET:
         kind, dynamics, reward = _parse_whack_a_mole(name)
         entries.append(_whack_a_mole(kind, dynamics, reward))
