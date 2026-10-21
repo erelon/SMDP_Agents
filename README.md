@@ -1,6 +1,6 @@
-# RL Agents
+# SMDP Agents
 
-A modular reinforcement learning library supporting tabular, bandit, deep Q-learning, and PPO algorithms, with first-class support for **Semi-Markov Decision Processes (SMDPs)** — environments where actions have variable durations.
+A modular reinforcement learning library supporting tabular, bandit, deep Q-learning, PPO and DeepSMART algorithms, with first-class support for **Semi-Markov Decision Processes (SMDPs)** — environments where actions have variable durations.
 
 ---
 
@@ -56,7 +56,7 @@ agent = QLearning(name="agent", action_space=[0, 1, 2], env=my_env)
 All agents share the same four-method interface:
 
 ```python
-agent.reset()  # call once before each episode
+agent.reset()  # once, before training — see "Seeding and reset semantics"
 
 for episode in range(n_episodes):
     state = env.reset()
@@ -207,8 +207,6 @@ last_at = agent.last_policy_changed_at      # episode index (set by the caller)
 steps   = agent.step_count                  # learn() calls since construction/reset
 ```
 
----
-
 ### 8. Saving and loading agents
 
 Every agent in the library — tabular or network — round-trips through one pair of
@@ -242,9 +240,6 @@ torch's RNG is global rather than the agent's, but a network agent draws its
 actions and minibatch order from it. Pass `restore_torch_rng=True` for a
 step-for-step identical resume; the default leaves it alone, because loading an
 object should not reseed the interpreter behind your back.
-
-To import a policy trained by a *different* stack, see
-`smdp_agents.portable_policy`, which carries weights only.
 
 ## Algorithms
 
@@ -392,16 +387,48 @@ For standard gym-style environments where every step has the same duration, pass
 
 ## Example environments
 
-`examples/` holds 28 SMDP environments behind one interface, a runner that measures
-every tabular agent on them, and the report and figures generated from the results.
+`examples/` holds 38 SMDP environments behind one interface, a runner that measures
+all 18 tabular agents on them (plus `Oracle` where the optimal policy is known), and
+the report and figures generated from the results.
 See [examples/README.md](examples/README.md) for the catalogue; the short version:
 
 ```bash
 python -m examples.envs                     # list every environment
+python -m examples.run --list               # the same, plus the agent roster
 python -m examples.run --all --seeds 8      # the full sweep -> examples/results/*.json
 python -m examples.make_report              # -> examples/results/REPORT.md
 python -m examples.make_plots               # -> examples/results/plots/*.png
 ```
+
+An environment there is a Gymnasium environment that reports the holding time of
+each action in `info["tau"]`, plus `state_of(obs)` for a hashable state,
+`get_available_actions(state)` for legality, and `secret()` where the optimal policy
+is known analytically. `examples.envs.check_smdp_env` audits all of that and runs
+against every registered environment in the test suite.
+
+They are grouped by the question each one asks. Several are small enough to have an
+analytic answer, and where they do the number is asserted in the tests rather than
+merely asserted in prose — `gemini`, for instance, is worth 10 under a time-average
+but 1 under a ratio of expectations, so which action an agent takes there names the
+criterion it is really optimising.
+
+| Family | Question |
+|---|---|
+| `criterion` | Which definition of "reward per unit time" does this agent optimise? |
+| `risk` | Same rate, different spread — what is the agent's risk attitude? |
+| `horizon` | Does it look far enough ahead to refuse a poisoned jackpot? |
+| `drift` | Can it follow a world where the best action changes? |
+| `rates` | Reward earned at a rate over a random duration, so reward and time are coupled. |
+| `whack_a_mole` | The same grid world with τ ≡ 1 and with variable τ — does time-awareness buy anything? Plus two SMDP cells tuned to separate the agents. |
+| `market` | Real hourly Bitcoin bars, holding times derived from the returns. |
+
+Budgets and hyperparameters otherwise come from each environment's source
+repository (`examples/source_settings.py`). `wam_smdp_balanced_cost` and
+`wam_smdp_costly_whack` are the exception: they were picked by a parameter sweep for
+how well they separate the agents, and run on library defaults. On the SMDP grid
+the agent ordering follows the cost ratio `whack_time / time_per_distance` — at
+ratio 1 the harmonic family wins, at ratio 8 `ContinuousRLearning` does. The
+docstring of `_tuned_whack_a_mole` in `examples/envs/__init__.py` has the numbers.
 
 ### MuJoCo locomotion as an SMDP
 
@@ -425,29 +452,6 @@ Needs `gymnasium[mujoco]`, which is an OPTIONAL requirement: this module is not
 imported by `examples/envs/__init__.py`, so the rest of the library works
 without it. Ant can terminate and Swimmer cannot — compare agents on a
 discount-free quantity when an environment can end.
-
-
-An environment there is a Gymnasium environment that reports the holding time of
-each action in `info["tau"]`, plus `state_of(obs)` for a hashable state,
-`get_available_actions(state)` for legality, and `secret()` where the optimal policy
-is known analytically. `examples.envs.check_smdp_env` audits all of that and runs
-against every registered environment in the test suite.
-
-They are grouped by the question each one asks. Several are small enough to have an
-analytic answer, and where they do the number is asserted in the tests rather than
-merely asserted in prose — `gemini`, for instance, is worth 10 under a time-average
-but 1 under a ratio of expectations, so which action an agent takes there names the
-criterion it is really optimising.
-
-| Family | Question |
-|---|---|
-| `criterion` | Which definition of "reward per unit time" does this agent optimise? |
-| `risk` | Same rate, different spread — what is the agent's risk attitude? |
-| `horizon` | Does it look far enough ahead to refuse a poisoned jackpot? |
-| `drift` | Can it follow a world where the best action changes? |
-| `rates` | Reward earned at a rate over a random duration, so reward and time are coupled. |
-| `whack_a_mole` | The same grid world with τ ≡ 1 and with variable τ — does time-awareness buy anything? |
-| `market` | Real hourly Bitcoin bars, holding times derived from the returns. |
 
 ---
 

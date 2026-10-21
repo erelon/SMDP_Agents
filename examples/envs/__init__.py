@@ -470,6 +470,3 @@ def describe(family: Optional[str] = None) -> str:
         lines.append(f"{spec.name:<{width}}  [{spec.family}]  {spec.describe()}")
     return "\n".join(lines)
 
-
-if __name__ == "__main__":
-    print(describe())
